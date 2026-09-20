@@ -15,16 +15,20 @@
   let output = null;
   let scrim = null;
   let veil = null;
+  let marks = null;
   let focusCatcher = null;
   let tip = null;
   let lastText = "";
   let lastRect = null;
   let lastHoles = [];
+  let lastRange = null;
   let showTimer = null;
   let menuObserver = null;
   let watchedNodes = [];
   let tipSize = { width: 56, height: 28 };
   let scrollLocked = false;
+  let pinningScroll = false;
+  let savedScrollX = 0;
   let savedScrollY = 0;
   let previousOverflow = { html: "", body: "" };
   let explainPort = null;
@@ -52,26 +56,63 @@
     return path.includes(input) || shadow?.activeElement === input;
   }
 
-  function stopHostEnter(event) {
-    if (!isOverlayOpen() || event.key !== "Enter") {
+  function isScrollKey(event) {
+    if (event.ctrlKey || event.metaKey || event.altKey) return false;
+    return (
+      event.key === " " ||
+      event.key === "PageDown" ||
+      event.key === "PageUp" ||
+      event.key === "ArrowDown" ||
+      event.key === "ArrowUp" ||
+      event.key === "ArrowLeft" ||
+      event.key === "ArrowRight" ||
+      event.key === "Home" ||
+      event.key === "End"
+    );
+  }
+
+  function insertOtherSpace() {
+    const input = promptBar?.querySelector(".other input");
+    if (!input || input.disabled) return;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? start;
+    input.setRangeText(" ", start, end, "end");
+  }
+
+  function stopHostKeys(event) {
+    if (!isOverlayOpen()) {
       return;
     }
     if (event.isComposing || event.keyCode === 229) {
       return;
     }
-    if (!isOtherInputEvent(event)) {
+
+    // Enter and Space are composed, so a page capture listener would act on
+    // them before the Other field's own handler runs.
+    if (isOtherInputEvent(event) && event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      if (event.type === "keydown") {
+        submitOther();
+      }
       return;
     }
 
-    // Word / contenteditable still own the preserved highlight. Enter is
-    // composed, so a page capture listener would replace that selection
-    // before the input's own handler runs.
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
+    if (isOtherInputEvent(event) && event.key === " ") {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      if (event.type === "keydown") {
+        insertOtherSpace();
+      }
+      return;
+    }
 
-    if (event.type === "keydown") {
-      submitOther();
+    if (!isOtherInputEvent(event) && isScrollKey(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
     }
   }
 
@@ -82,12 +123,42 @@
     event.preventDefault();
   }
 
+  function pinScroll() {
+    if (!scrollLocked || pinningScroll) {
+      return;
+    }
+    if (window.scrollX === savedScrollX && window.scrollY === savedScrollY) {
+      return;
+    }
+    pinningScroll = true;
+    window.scrollTo(savedScrollX, savedScrollY);
+    pinningScroll = false;
+  }
+
+  function syncOverlayToSelection() {
+    if (!isOverlayOpen() || !lastRange) return;
+    try {
+      const rect = boxFromRect(lastRange.getBoundingClientRect());
+      if (!rect.width && !rect.height) return;
+      const holes = [...lastRange.getClientRects()]
+        .map(boxFromRect)
+        .filter((box) => box.width && box.height);
+      lastRect = rect;
+      lastHoles = holes.length ? holes : [rect];
+      updateSpotlight();
+      positionOverlay(lastRect);
+    } catch {
+      // Range can detach if the host page rewrites the highlighted nodes.
+    }
+  }
+
   function lockScroll() {
     if (scrollLocked) {
       return;
     }
 
     scrollLocked = true;
+    savedScrollX = window.scrollX;
     savedScrollY = window.scrollY;
     previousOverflow = {
       html: document.documentElement.style.overflow,
@@ -110,7 +181,7 @@
     document.body.style.overflow = previousOverflow.body;
     document.removeEventListener("wheel", preventPageScroll);
     document.removeEventListener("touchmove", preventPageScroll);
-    window.scrollTo(0, savedScrollY);
+    window.scrollTo(savedScrollX, savedScrollY);
   }
 
   function ensureUi() {
@@ -163,6 +234,17 @@
           background: rgba(255, 255, 255, 0.58);
           backdrop-filter: blur(14px);
           -webkit-backdrop-filter: blur(14px);
+        }
+
+        .marks {
+          position: fixed;
+          inset: 0;
+          pointer-events: none;
+        }
+
+        .mark {
+          position: fixed;
+          background: rgba(232, 196, 104, 0.5);
         }
 
         .focus-catcher {
@@ -300,6 +382,7 @@
 
       <div class="scrim hidden" part="scrim">
         <div class="veil"></div>
+        <div class="marks"></div>
       </div>
       <div class="focus-catcher hidden"></div>
       <button type="button" class="tip hidden" aria-label="Explain with ELIX">ELIX</button>
@@ -321,6 +404,7 @@
 
     scrim = shadow.querySelector(".scrim");
     veil = shadow.querySelector(".veil");
+    marks = shadow.querySelector(".marks");
     focusCatcher = shadow.querySelector(".focus-catcher");
     tip = shadow.querySelector(".tip");
     promptBar = shadow.querySelector(".prompt-bar");
@@ -356,15 +440,21 @@
     });
     focusCatcher.addEventListener("click", () => hideOverlay());
 
-    // Keep page selection from being cleared when interacting with the overlay.
-    const preserveSelection = (event) => {
+    // Keep clicks in the overlay from placing a caret on the page.
+    const swallowMouse = (event) => {
       event.preventDefault();
       event.stopPropagation();
     };
-    promptBar.addEventListener("mousedown", preserveSelection);
-    output.addEventListener("mousedown", preserveSelection);
+    promptBar.addEventListener("mousedown", swallowMouse);
+    output.addEventListener("mousedown", swallowMouse);
 
     promptBar.addEventListener("click", onPromptClick);
+
+    for (const type of ["keydown", "keyup", "keypress"]) {
+      shadow.addEventListener(type, (event) => {
+        event.stopPropagation();
+      });
+    }
 
     const otherInput = promptBar.querySelector(".other input");
     otherInput.addEventListener("keydown", (event) => {
@@ -375,6 +465,9 @@
       event.stopPropagation();
       submitOther();
     });
+    otherInput.addEventListener("keyup", (event) => event.stopPropagation());
+    otherInput.addEventListener("keypress", (event) => event.stopPropagation());
+    otherInput.addEventListener("focus", () => pinScroll());
 
     // Allow typing in the freeform field (mousedown preventDefault would block focus).
     otherInput.addEventListener("mousedown", (event) => {
@@ -448,6 +541,7 @@
     const mask = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
     veil.style.webkitMaskImage = mask;
     veil.style.maskImage = mask;
+    paintMarks(rects);
 
     const bounds = lastRect ? holeFromRect(lastRect) : rects[0];
     if (!bounds) return;
@@ -458,6 +552,36 @@
       width: `${Math.round(bounds.width)}px`,
       height: `${Math.round(bounds.height)}px`,
     });
+  }
+
+  function paintMarks(rects) {
+    if (!marks) return;
+
+    while (marks.children.length > rects.length) {
+      marks.lastElementChild.remove();
+    }
+
+    rects.forEach((hole, index) => {
+      let mark = marks.children[index];
+      if (!mark) {
+        mark = document.createElement("div");
+        mark.className = "mark";
+        marks.appendChild(mark);
+      }
+      Object.assign(mark.style, {
+        top: `${Math.round(hole.top)}px`,
+        left: `${Math.round(hole.left)}px`,
+        width: `${Math.round(hole.width)}px`,
+        height: `${Math.round(hole.height)}px`,
+      });
+    });
+  }
+
+  function clearPageSelection() {
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+      selection.removeAllRanges();
+    }
   }
 
   function fadeOpen(el) {
@@ -622,7 +746,7 @@
       const other = promptBar.querySelector(".other");
       other.classList.add("open");
       if (lastRect) positionOverlay(lastRect);
-      queueMicrotask(() => promptBar.querySelector(".other input").focus());
+      queueMicrotask(() => promptBar.querySelector(".other input").focus({ preventScroll: true }));
       return;
     }
 
@@ -695,15 +819,12 @@
 
       lastRect = null;
       lastHoles = [];
+      lastRange = null;
       lastText = "";
+      if (marks) marks.replaceChildren();
       cancelScheduledTip();
       hideTip();
       unlockScroll();
-
-      const selection = window.getSelection();
-      if (selection && !selection.isCollapsed) {
-        selection.removeAllRanges();
-      }
     }, OVERLAY_FADE_MS);
   }
 
@@ -1040,6 +1161,7 @@
     lastText = captured.text;
     lastRect = captured.rect;
     lastHoles = captured.holes?.length ? captured.holes : [captured.rect];
+    lastRange = captured.range ? captured.range.cloneRange() : lastRange;
   }
 
   function revealTip(captured) {
@@ -1112,6 +1234,7 @@
     focusCatcher.classList.remove("hidden");
     fadeOpen(scrim);
     fadeOpen(promptBar);
+    clearPageSelection();
     output.classList.remove("open");
     output.classList.add("hidden");
     lockScroll();
@@ -1162,7 +1285,11 @@
   window.addEventListener(
     "scroll",
     () => {
-      if (isOverlayOpen()) return;
+      if (isOverlayOpen()) {
+        pinScroll();
+        syncOverlayToSelection();
+        return;
+      }
       cancelScheduledTip();
       hideTip();
     },
@@ -1171,6 +1298,8 @@
 
   window.addEventListener("resize", () => {
     if (isOverlayOpen() && lastRect) {
+      pinScroll();
+      syncOverlayToSelection();
       updateSpotlight();
       positionOverlay(lastRect);
       return;
@@ -1195,7 +1324,7 @@
     }
   });
 
-  window.addEventListener("keydown", stopHostEnter, true);
-  window.addEventListener("keypress", stopHostEnter, true);
-  window.addEventListener("keyup", stopHostEnter, true);
+  window.addEventListener("keydown", stopHostKeys, true);
+  window.addEventListener("keypress", stopHostKeys, true);
+  window.addEventListener("keyup", stopHostKeys, true);
 })();
