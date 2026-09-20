@@ -13,13 +13,13 @@ Working Manifest V3 prototype: selection overlay + BYOK OpenAI call from the ser
 3. Click **Load unpacked**
 4. Select this folder (`ELIX`)
 5. Open the extension’s **Options** page and paste your OpenAI API key
-6. Highlight text on any normal webpage and pick a level in the overlay
+6. Highlight text on any normal webpage, click **ELIX**, and pick a level in the overlay
 
 Clicking the toolbar icon also opens Options.
 
 ## How it works
 
-1. Content script watches for text selection and shows a shadow-DOM overlay
+1. Content script watches for text selection, shows an ELIX chip (placed to avoid other highlight menus), and opens a shadow-DOM overlay when you click it
 2. Choosing a level sends the selected text to the background service worker
 3. Service worker calls OpenAI Chat Completions with your stored key
 4. Explanation is returned into the overlay

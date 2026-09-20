@@ -2,6 +2,12 @@
   const HOST_ID = "elix-root";
   const LEVELS = ["5", "10", "15", "20"];
   const SPOTLIGHT_PAD = 6;
+  // In-page highlight menus mount after mouseup; wait before placing the chip.
+  const MENU_WAIT_MS = 220;
+  const MENU_LATE_MS = 180;
+  const TIP_GAP = 8;
+  const MENU_PROXIMITY = 64;
+  const VIEW_MARGIN = 8;
 
   let host = null;
   let shadow = null;
@@ -9,9 +15,13 @@
   let scrim = null;
   let focusRing = null;
   let focusCatcher = null;
+  let tip = null;
   let lastText = "";
   let lastRect = null;
   let showTimer = null;
+  let menuObserver = null;
+  let watchedNodes = [];
+  let tipSize = { width: 56, height: 28 };
   let scrollLocked = false;
   let savedScrollY = 0;
   let previousOverflow = { html: "", body: "" };
@@ -24,6 +34,10 @@
 
   function isPanelOpen() {
     return Boolean(panel && !panel.classList.contains("hidden"));
+  }
+
+  function isTipOpen() {
+    return Boolean(tip && !tip.classList.contains("hidden"));
   }
 
   function preventPageScroll(event) {
@@ -210,12 +224,44 @@
 
         .error { color: #ffb4a8; }
         .status { color: rgba(244, 241, 234, 0.7); }
+
+        .tip {
+          position: fixed;
+          appearance: none;
+          border: 1px solid rgba(244, 241, 234, 0.12);
+          background: #171a1d;
+          color: #e8c468;
+          font: 600 11px/1 "IBM Plex Mono", ui-monospace, monospace;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          padding: 7px 10px;
+          border-radius: 999px;
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+          cursor: pointer;
+          user-select: none;
+        }
+
+        .tip:hover {
+          background: #22262b;
+          border-color: rgba(232, 196, 104, 0.7);
+        }
+
+        @keyframes elix-tip-in {
+          from { opacity: 0; transform: translateY(3px); }
+          to { opacity: 1; transform: none; }
+        }
+
+        .tip:not(.hidden) {
+          animation: elix-tip-in 140ms ease-out;
+        }
+
         .hidden { display: none !important; }
       </style>
 
       <div class="scrim hidden" part="scrim"></div>
       <div class="focus-catcher hidden"></div>
       <div class="focus-ring hidden"></div>
+      <button type="button" class="tip hidden" aria-label="Explain with ELIX">ELIX</button>
 
       <div class="panel hidden" part="panel">
         <div class="header">
@@ -237,6 +283,7 @@
     scrim = shadow.querySelector(".scrim");
     focusCatcher = shadow.querySelector(".focus-catcher");
     focusRing = shadow.querySelector(".focus-ring");
+    tip = shadow.querySelector(".tip");
     panel = shadow.querySelector(".panel");
 
     const levels = shadow.querySelector(".levels");
@@ -289,7 +336,32 @@
       event.stopPropagation();
     });
 
+    tip.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    tip.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openOverlay();
+    });
+
     document.documentElement.appendChild(host);
+    measureTip();
+  }
+
+  function measureTip() {
+    if (!tip) return;
+    tip.classList.remove("hidden");
+    tip.style.visibility = "hidden";
+    tip.style.top = "0px";
+    tip.style.left = "0px";
+    tipSize = {
+      width: Math.max(44, Math.ceil(tip.offsetWidth)),
+      height: Math.max(24, Math.ceil(tip.offsetHeight)),
+    };
+    tip.style.visibility = "";
+    tip.classList.add("hidden");
   }
 
   function paddedRect(rect) {
@@ -455,6 +527,11 @@
     panel.style.left = `${Math.round(left)}px`;
   }
 
+  function hideTip() {
+    if (!tip) return;
+    tip.classList.add("hidden");
+  }
+
   function hidePanel() {
     if (!panel) return;
 
@@ -470,37 +547,19 @@
     panel.querySelector(".error").classList.add("hidden");
 
     lastRect = null;
+    lastText = "";
+    cancelScheduledTip();
+    hideTip();
     unlockScroll();
+
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+      selection.removeAllRanges();
+    }
   }
 
-  function openForSelection() {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed) {
-      return;
-    }
-
-    const text = selection.toString().trim();
-    if (!text || text.length < 2) {
-      return;
-    }
-
-    const range = selection.rangeCount ? selection.getRangeAt(0) : null;
-    if (!range) {
-      return;
-    }
-
-    if (host && selection.anchorNode && host.contains(selection.anchorNode)) {
-      return;
-    }
-
-    const rect = range.getBoundingClientRect();
-    if (!rect.width && !rect.height) {
-      return;
-    }
-
-    ensureUi();
-    lastText = text;
-    lastRect = {
+  function boxFromRect(rect) {
+    return {
       top: rect.top,
       left: rect.left,
       right: rect.right,
@@ -508,7 +567,393 @@
       width: rect.width,
       height: rect.height,
     };
+  }
 
+  function inflate(rect, pad) {
+    return {
+      top: rect.top - pad,
+      left: rect.left - pad,
+      right: rect.right + pad,
+      bottom: rect.bottom + pad,
+      width: rect.width + pad * 2,
+      height: rect.height + pad * 2,
+    };
+  }
+
+  function overlaps(a, b) {
+    return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  }
+
+  function stopMenuWatch() {
+    if (menuObserver) {
+      menuObserver.disconnect();
+      menuObserver = null;
+    }
+  }
+
+  function startMenuWatch() {
+    stopMenuWatch();
+    watchedNodes = [];
+    if (!document.documentElement) return;
+
+    menuObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType === Node.ELEMENT_NODE && watchedNodes.length < 48) {
+            watchedNodes.push(node);
+          }
+        }
+      }
+    });
+    menuObserver.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  function cancelScheduledTip() {
+    clearTimeout(showTimer);
+    showTimer = null;
+    stopMenuWatch();
+  }
+
+  function floatingRoot(el) {
+    let current = el;
+
+    while (current && current !== document.body && current !== document.documentElement) {
+      if (current === host) return null;
+      const style = getComputedStyle(current);
+      // Sticky is almost always page chrome (headers, sidebars), not a highlight menu.
+      if (style.position === "fixed" || style.position === "absolute") {
+        return current;
+      }
+      current = current.parentElement;
+    }
+
+    return null;
+  }
+
+  function isInteractiveMenu(el) {
+    if (
+      el.matches(
+        "button, [role='button'], [role='toolbar'], [role='menu'], [role='listbox'], [data-radix-popper-content-wrapper], [data-floating-ui-portal]"
+      )
+    ) {
+      return true;
+    }
+
+    return Boolean(
+      el.querySelector("button, [role='button'], [role='menuitem'], [role='toolbar']")
+    );
+  }
+
+  function looksLikeSelectionMenu(el, selectionBox, range, { allowInert } = {}) {
+    if (!el || el === document.documentElement || el === document.body) return false;
+    if (el === host || host.contains(el)) return false;
+
+    const style = getComputedStyle(el);
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      Number(style.opacity) === 0
+    ) {
+      return false;
+    }
+
+    const pos = style.position;
+    if (pos !== "fixed" && pos !== "absolute") {
+      return false;
+    }
+
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 32 || rect.height < 18) return false;
+    if (rect.width > 520 || rect.height > 160) return false;
+    if (rect.width >= window.innerWidth * 0.8) return false;
+
+    if (!overlaps(inflate(selectionBox, MENU_PROXIMITY), rect)) {
+      return false;
+    }
+
+    if (range) {
+      try {
+        if (el.contains(range.commonAncestorContainer)) {
+          return false;
+        }
+      } catch {
+        // Range may detach after the selection changes.
+      }
+    }
+
+    if (!allowInert && !isInteractiveMenu(el)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  function addMenuRect(el, selectionBox, range, bucket, options) {
+    const root = floatingRoot(el) || el;
+    if (!looksLikeSelectionMenu(root, selectionBox, range, options)) {
+      return;
+    }
+
+    const rect = boxFromRect(root.getBoundingClientRect());
+    const duplicate = bucket.some(
+      (existing) =>
+        Math.abs(existing.top - rect.top) < 2 &&
+        Math.abs(existing.left - rect.left) < 2 &&
+        Math.abs(existing.width - rect.width) < 2 &&
+        Math.abs(existing.height - rect.height) < 2
+    );
+    if (!duplicate) {
+      bucket.push(rect);
+    }
+  }
+
+  function samplePoints(rect, line) {
+    const cx = rect.left + rect.width / 2;
+    const midY = rect.top + rect.height / 2;
+    const points = [
+      { x: cx, y: rect.top - 28 },
+      { x: cx, y: rect.bottom + 28 },
+      { x: rect.left - 28, y: midY },
+      { x: rect.right + 28, y: midY },
+      { x: line.right + 18, y: line.top - 18 },
+      { x: line.right + 18, y: line.bottom + 18 },
+      { x: cx, y: rect.top - 56 },
+      { x: cx, y: rect.bottom + 56 },
+    ];
+
+    return points.filter(
+      (point) =>
+        point.x >= 0 &&
+        point.y >= 0 &&
+        point.x <= window.innerWidth &&
+        point.y <= window.innerHeight
+    );
+  }
+
+  function collectCompetingRects(captured) {
+    const bucket = [];
+    if (!captured) return bucket;
+
+    const selectionBox = captured.rect;
+    const range = captured.range;
+
+    const semantic = document.querySelectorAll(
+      "[role='toolbar'], [role='menu'], [data-radix-popper-content-wrapper], [data-floating-ui-portal]"
+    );
+    semantic.forEach((el) => addMenuRect(el, selectionBox, range, bucket));
+
+    for (const point of samplePoints(selectionBox, captured.line)) {
+      let stack = [];
+      try {
+        stack = document.elementsFromPoint(point.x, point.y);
+      } catch {
+        continue;
+      }
+
+      let counted = 0;
+      for (const el of stack) {
+        if (el === host || (host && host.contains(el))) continue;
+        if (el === document.documentElement || el === document.body) continue;
+        addMenuRect(el, selectionBox, range, bucket);
+        counted += 1;
+        if (counted >= 6) break;
+      }
+    }
+
+    for (const node of watchedNodes) {
+      if (!node.isConnected) continue;
+      addMenuRect(node, selectionBox, range, bucket, { allowInert: true });
+      if (typeof node.querySelectorAll === "function") {
+        node
+          .querySelectorAll("button, [role='toolbar'], [role='menu']")
+          .forEach((child) => addMenuRect(child, selectionBox, range, bucket));
+      }
+    }
+
+    return bucket;
+  }
+
+  function boxAt(left, top, size) {
+    return {
+      left,
+      top,
+      right: left + size.width,
+      bottom: top + size.height,
+      width: size.width,
+      height: size.height,
+    };
+  }
+
+  function fitsViewport(left, top, size) {
+    return (
+      left >= VIEW_MARGIN &&
+      top >= VIEW_MARGIN &&
+      left + size.width <= window.innerWidth - VIEW_MARGIN &&
+      top + size.height <= window.innerHeight - VIEW_MARGIN
+    );
+  }
+
+  function clampBox(left, top, size) {
+    const maxLeft = Math.max(VIEW_MARGIN, window.innerWidth - size.width - VIEW_MARGIN);
+    const maxTop = Math.max(VIEW_MARGIN, window.innerHeight - size.height - VIEW_MARGIN);
+    const nextLeft = Math.min(Math.max(VIEW_MARGIN, left), maxLeft);
+    const nextTop = Math.min(Math.max(VIEW_MARGIN, top), maxTop);
+    return boxAt(nextLeft, nextTop, size);
+  }
+
+  function positionTip(captured, obstacles) {
+    if (!tip || !captured) return;
+
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    const extra = coarse ? 22 : 0;
+    const gap = TIP_GAP + extra;
+    const rect = captured.rect;
+    const first = captured.first || captured.rect;
+    const line = captured.line;
+    const size = tipSize;
+    const cx = first.left + first.width / 2 - size.width / 2;
+    const midY = line.top + (line.height - size.height) / 2;
+    const aboveTop = first.top - size.height - gap;
+    const canSitAbove = aboveTop >= VIEW_MARGIN;
+
+    const above = canSitAbove
+      ? [
+          { left: cx, top: aboveTop },
+          { left: first.left, top: aboveTop },
+          { left: first.right - size.width, top: aboveTop },
+        ]
+      : [];
+    const below = [
+      { left: cx, top: rect.bottom + gap },
+      { left: line.right - size.width, top: line.bottom + gap },
+      { left: first.left, top: rect.bottom + gap },
+    ];
+    // Beside overlays the rest of the line, so it is a last resort.
+    const beside = [
+      { left: line.right + gap, top: midY },
+      { left: line.left - size.width - gap, top: midY },
+    ];
+    // OS selection callouts on touch devices also sit above and are not in the DOM.
+    const raw = coarse ? [...below, ...above, ...beside] : [...above, ...below, ...beside];
+
+    const candidates = raw
+      .filter((pos) => fitsViewport(pos.left, pos.top, size))
+      .map((pos) => boxAt(pos.left, pos.top, size));
+
+    if (!candidates.length) {
+      candidates.push(clampBox(raw[0].left, raw[0].top, size));
+    }
+
+    const pad = 6;
+    const picked =
+      candidates.find((box) => !obstacles.some((obstacle) => overlaps(inflate(box, pad), obstacle))) ||
+      candidates[0];
+
+    tip.style.left = `${Math.round(picked.left)}px`;
+    tip.style.top = `${Math.round(picked.top)}px`;
+  }
+
+  function readSelection() {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) {
+      return null;
+    }
+
+    const text = selection.toString().trim();
+    if (!text || text.length < 2) {
+      return null;
+    }
+
+    const range = selection.rangeCount ? selection.getRangeAt(0) : null;
+    if (!range) {
+      return null;
+    }
+
+    if (host && selection.anchorNode && host.contains(selection.anchorNode)) {
+      return null;
+    }
+
+    const rect = boxFromRect(range.getBoundingClientRect());
+    if (!rect.width && !rect.height) {
+      return null;
+    }
+
+    const clientRects = range.getClientRects();
+    const first = clientRects.length ? boxFromRect(clientRects[0]) : rect;
+    const line = clientRects.length ? boxFromRect(clientRects[clientRects.length - 1]) : rect;
+
+    return { text, rect, first, line, range };
+  }
+
+  function storeCapture(captured) {
+    lastText = captured.text;
+    lastRect = captured.rect;
+  }
+
+  function revealTip(captured) {
+    if (isPanelOpen()) return;
+
+    const live = readSelection();
+    const current = live && live.text === captured.text ? live : captured;
+    storeCapture(current);
+
+    const obstacles = collectCompetingRects(current);
+    positionTip(current, obstacles);
+    tip.classList.remove("hidden");
+  }
+
+  function showTipForSelection() {
+    if (isPanelOpen()) return;
+
+    const captured = readSelection();
+    if (!captured) {
+      hideTip();
+      return;
+    }
+
+    ensureUi();
+    storeCapture(captured);
+    startMenuWatch();
+    revealTip(captured);
+
+    showTimer = setTimeout(() => {
+      if (!isTipOpen() || isPanelOpen()) {
+        stopMenuWatch();
+        return;
+      }
+      revealTip(captured);
+      showTimer = setTimeout(() => {
+        if (!isTipOpen() || isPanelOpen()) {
+          stopMenuWatch();
+          return;
+        }
+        revealTip(captured);
+        stopMenuWatch();
+      }, MENU_LATE_MS);
+    }, MENU_WAIT_MS);
+  }
+
+  function scheduleTip() {
+    if (isPanelOpen()) return;
+    cancelScheduledTip();
+    hideTip();
+    showTimer = setTimeout(showTipForSelection, 16);
+  }
+
+  function openOverlay() {
+    cancelScheduledTip();
+    hideTip();
+
+    const captured = readSelection();
+    if (captured) {
+      storeCapture(captured);
+    }
+
+    if (!lastText?.trim() || !lastRect) {
+      return;
+    }
+
+    ensureUi();
     updateSpotlight(lastRect);
     positionPanel(lastRect);
 
@@ -525,18 +970,69 @@
     panel.querySelector(".error").classList.add("hidden");
   }
 
-  document.addEventListener("mouseup", (event) => {
-    if (isEventFromUi(event)) {
+  document.addEventListener(
+    "mouseup",
+    (event) => {
+      if (event.button !== 0) return;
+      if (isEventFromUi(event)) return;
+      if (isPanelOpen()) return;
+      scheduleTip();
+    },
+    true
+  );
+
+  document.addEventListener("keyup", (event) => {
+    if (event.key !== "Shift") return;
+    if (isEventFromUi(event)) return;
+    if (isPanelOpen()) return;
+    scheduleTip();
+  });
+
+  document.addEventListener("selectionchange", () => {
+    if (isPanelOpen()) return;
+
+    const selection = window.getSelection();
+    const text = selection?.toString().trim() || "";
+    if (!text) {
+      cancelScheduledTip();
+      hideTip();
       return;
     }
-    clearTimeout(showTimer);
-    showTimer = setTimeout(openForSelection, 10);
+
+    if (isTipOpen() && text !== lastText) {
+      hideTip();
+    }
+  });
+
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (isPanelOpen()) return;
+      cancelScheduledTip();
+      hideTip();
+    },
+    true
+  );
+
+  window.addEventListener("resize", () => {
+    if (isPanelOpen()) return;
+    cancelScheduledTip();
+    hideTip();
   });
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && isPanelOpen()) {
+    if (event.key !== "Escape") return;
+
+    if (isPanelOpen()) {
       event.preventDefault();
       hidePanel();
+      return;
+    }
+
+    if (isTipOpen()) {
+      event.preventDefault();
+      cancelScheduledTip();
+      hideTip();
     }
   });
 })();
