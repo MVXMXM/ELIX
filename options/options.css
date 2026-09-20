@@ -55,9 +55,82 @@ label {
   gap: 6px;
 }
 
-label span {
+label span,
+legend {
   font-size: 13px;
   font-weight: 600;
+}
+
+fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 8px;
+}
+
+legend {
+  padding: 0;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--field);
+  color: var(--ink);
+  font: 600 13px/1 "IBM Plex Sans", "Segoe UI", sans-serif;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chip:hover {
+  border-color: var(--ink);
+}
+
+.chip:has(input:focus-visible) {
+  outline: 2px solid rgba(154, 107, 22, 0.35);
+  outline-offset: 1px;
+}
+
+.chip:has(input:checked) {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+.chip input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  opacity: 1;
 }
 
 input {

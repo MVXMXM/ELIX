@@ -1,6 +1,7 @@
 (() => {
   const HOST_ID = "elix-root";
   const LEVELS = ["5", "10", "15", "20"];
+  const DEFAULT_LEVEL = "5";
   const OVERLAY_FADE_MS = 220;
   // In-page highlight menus mount after mouseup; wait before placing the chip.
   const MENU_WAIT_MS = 220;
@@ -33,6 +34,8 @@
   let previousOverflow = { html: "", body: "" };
   let explainPort = null;
   let overlayFadeTimer = null;
+  let explainDefaults = { defaultLevel: DEFAULT_LEVEL, defaultFreeform: "" };
+  let hasApiKey = false;
 
   function isEventFromUi(event) {
     if (!host) return false;
@@ -307,7 +310,15 @@
           border-color: #111;
         }
 
-        button:disabled { opacity: 0.55; cursor: wait; }
+        button.level[aria-pressed="true"] {
+          background: #111;
+          color: #fff;
+          border-color: #111;
+        }
+
+        button.level[aria-pressed="true"]:hover {
+          background: #222;
+        }
 
         .other {
           display: none;
@@ -316,6 +327,15 @@
         }
 
         .other.open { display: flex; }
+
+        .setup {
+          display: none;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 8px 10px;
+        }
+
+        .setup.open { display: flex; }
 
         .other input {
           flex: 1;
@@ -394,6 +414,10 @@
           <input type="text" placeholder="e.g. a tired parent / age 42" />
           <button type="button" class="go" data-action="submit-other">Go</button>
         </div>
+        <div class="setup">
+          <p class="prompt">Add an API key to explain this.</p>
+          <button type="button" class="go" data-action="add-key">Add key</button>
+        </div>
       </div>
       <div class="output hidden">
         <div class="status hidden"></div>
@@ -418,6 +442,7 @@
       button.className = "level";
       button.textContent = level;
       button.dataset.level = level;
+      button.setAttribute("aria-pressed", "false");
       levels.appendChild(button);
     }
 
@@ -426,6 +451,7 @@
     otherBtn.className = "level";
     otherBtn.textContent = "Other";
     otherBtn.dataset.action = "other";
+    otherBtn.setAttribute("aria-pressed", "false");
     levels.appendChild(otherBtn);
 
     scrim.addEventListener("mousedown", (event) => {
@@ -595,14 +621,6 @@
     el.classList.add("open");
   }
 
-  function setBusy(busy) {
-    promptBar.querySelectorAll("button").forEach((button) => {
-      button.disabled = busy;
-    });
-    const input = promptBar.querySelector(".other input");
-    if (input) input.disabled = busy;
-  }
-
   function showStatus(text) {
     const status = output.querySelector(".status");
     const result = output.querySelector(".result");
@@ -653,13 +671,18 @@
   }
 
   function requestExplain(level, freeform) {
+    if (!hasApiKey) {
+      setSetupMode(true);
+      if (lastRect) positionOverlay(lastRect);
+      return;
+    }
+
     if (!lastText.trim()) {
       showError("No text captured from the selection.");
       return;
     }
 
     abortExplain();
-    setBusy(true);
     output.querySelector(".result").textContent = "";
     showStatus("Thinking…");
 
@@ -667,7 +690,6 @@
     try {
       port = chrome.runtime.connect({ name: "elix-explain" });
     } catch (error) {
-      setBusy(false);
       showError(error?.message || String(error));
       return;
     }
@@ -688,7 +710,6 @@
         if (!explanation.trim()) {
           showError("The model returned an empty response.");
         }
-        setBusy(false);
         explainPort = null;
         try {
           port.disconnect();
@@ -700,7 +721,6 @@
 
       if (message.type === "error") {
         showError(message.error || "Something went wrong.");
-        setBusy(false);
         explainPort = null;
         try {
           port.disconnect();
@@ -713,7 +733,6 @@
     port.onDisconnect.addListener(() => {
       if (port !== explainPort) return;
       explainPort = null;
-      setBusy(false);
       const err = chrome.runtime.lastError?.message;
       if (err) showError(err);
     });
@@ -722,6 +741,83 @@
       type: "ELIX_EXPLAIN",
       payload: { text: lastText, level, freeform },
     });
+  }
+
+  function normalizeLevel(level) {
+    if (LEVELS.includes(String(level))) return String(level);
+    if (level === "other") return "other";
+    return DEFAULT_LEVEL;
+  }
+
+  function markSelectedLevel(level) {
+    if (!promptBar) return;
+    const current = normalizeLevel(level);
+    promptBar.querySelectorAll("button.level").forEach((button) => {
+      const selected =
+        button.dataset.level === current ||
+        (current === "other" && button.dataset.action === "other");
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+    });
+  }
+
+  async function refreshExplainDefaults() {
+    try {
+      const stored = await chrome.storage.sync.get({
+        defaultLevel: DEFAULT_LEVEL,
+        defaultFreeform: "",
+        apiKey: "",
+      });
+      explainDefaults = {
+        defaultLevel: normalizeLevel(stored.defaultLevel),
+        defaultFreeform: String(stored.defaultFreeform || ""),
+      };
+      hasApiKey = Boolean(String(stored.apiKey || "").trim());
+    } catch {
+      // Keep the in-memory default if extension storage is unavailable.
+    }
+
+    if (isOverlayOpen()) {
+      startDefaultExplain();
+    }
+  }
+
+  function setSetupMode(on) {
+    if (!promptBar) return;
+    promptBar.querySelector(".setup").classList.toggle("open", on);
+    promptBar.querySelector(":scope > .prompt").classList.toggle("hidden", on);
+    promptBar.querySelector(".levels").classList.toggle("hidden", on);
+    if (on) {
+      promptBar.querySelector(".other").classList.remove("open");
+    }
+  }
+
+  function startDefaultExplain() {
+    if (!hasApiKey) {
+      setSetupMode(true);
+      if (lastRect) positionOverlay(lastRect);
+      return;
+    }
+
+    setSetupMode(false);
+    const level = normalizeLevel(explainDefaults.defaultLevel);
+    markSelectedLevel(level);
+
+    if (level === "other") {
+      const other = promptBar.querySelector(".other");
+      const input = promptBar.querySelector(".other input");
+      other.classList.add("open");
+      const freeform = explainDefaults.defaultFreeform.trim();
+      input.value = explainDefaults.defaultFreeform;
+      if (lastRect) positionOverlay(lastRect);
+      if (freeform) {
+        requestExplain("other", freeform);
+      } else {
+        queueMicrotask(() => input.focus({ preventScroll: true }));
+      }
+      return;
+    }
+
+    requestExplain(level);
   }
 
   function submitOther() {
@@ -735,6 +831,7 @@
       showError("Describe the persona or audience first.");
       return;
     }
+    markSelectedLevel("other");
     requestExplain("other", value);
   }
 
@@ -742,7 +839,17 @@
     const button = event.target.closest("button");
     if (!button) return;
 
+    if (button.dataset.action === "add-key") {
+      try {
+        chrome.runtime.sendMessage({ type: "ELIX_OPEN_OPTIONS" });
+      } catch {
+        showError("Open ELIX options to add your API key.");
+      }
+      return;
+    }
+
     if (button.dataset.action === "other") {
+      markSelectedLevel("other");
       const other = promptBar.querySelector(".other");
       other.classList.add("open");
       if (lastRect) positionOverlay(lastRect);
@@ -756,7 +863,10 @@
     }
 
     if (button.dataset.level) {
+      promptBar.querySelector(".other").classList.remove("open");
+      markSelectedLevel(button.dataset.level);
       requestExplain(button.dataset.level);
+      if (lastRect) positionOverlay(lastRect);
     }
   }
 
@@ -812,6 +922,10 @@
 
       promptBar.querySelector(".other").classList.remove("open");
       promptBar.querySelector(".other input").value = "";
+      promptBar.querySelectorAll("button.level").forEach((button) => {
+        button.setAttribute("aria-pressed", "false");
+      });
+      setSetupMode(false);
       output.querySelector(".status").classList.add("hidden");
       output.querySelector(".result").classList.add("hidden");
       output.querySelector(".result").textContent = "";
@@ -1246,6 +1360,7 @@
     output.querySelector(".result").textContent = "";
     output.querySelector(".error").classList.add("hidden");
     positionOverlay(lastRect);
+    startDefaultExplain();
   }
 
   document.addEventListener(
@@ -1327,4 +1442,22 @@
   window.addEventListener("keydown", stopHostKeys, true);
   window.addEventListener("keypress", stopHostKeys, true);
   window.addEventListener("keyup", stopHostKeys, true);
+
+  refreshExplainDefaults();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "sync") return;
+    if (changes.defaultLevel) {
+      explainDefaults.defaultLevel = normalizeLevel(changes.defaultLevel.newValue);
+    }
+    if (changes.defaultFreeform) {
+      explainDefaults.defaultFreeform = String(changes.defaultFreeform.newValue || "");
+    }
+    if (changes.apiKey) {
+      const ready = Boolean(String(changes.apiKey.newValue || "").trim());
+      hasApiKey = ready;
+      if (ready && isOverlayOpen()) {
+        startDefaultExplain();
+      }
+    }
+  });
 })();

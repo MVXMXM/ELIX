@@ -161,6 +161,16 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
-chrome.action.onClicked.addListener(() => {
+function openOptions() {
   chrome.runtime.openOptionsPage();
+}
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === "ELIX_OPEN_OPTIONS") {
+    openOptions();
+  }
+});
+
+chrome.action.onClicked.addListener(() => {
+  openOptions();
 });

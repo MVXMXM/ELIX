@@ -25,6 +25,7 @@
             autocomplete="off"
             placeholder="sk-..."
             required
+            autofocus
           />
         </label>
 
@@ -49,6 +50,45 @@
             placeholder="https://api.openai.com/v1"
           />
         </label>
+
+        <fieldset>
+          <legend>Default level</legend>
+          <p class="hint">
+            Used as soon as you click the ELIX tooltip. You can still pick
+            another level on the page.
+          </p>
+          <div class="levels" role="radiogroup" aria-label="Default explanation level">
+            <label class="chip">
+              <input type="radio" name="defaultLevel" value="5" checked />
+              5
+            </label>
+            <label class="chip">
+              <input type="radio" name="defaultLevel" value="10" />
+              10
+            </label>
+            <label class="chip">
+              <input type="radio" name="defaultLevel" value="15" />
+              15
+            </label>
+            <label class="chip">
+              <input type="radio" name="defaultLevel" value="20" />
+              20
+            </label>
+            <label class="chip">
+              <input type="radio" name="defaultLevel" value="other" />
+              Other
+            </label>
+          </div>
+          <label id="default-freeform-wrap" hidden>
+            <span>Other persona</span>
+            <input
+              id="defaultFreeform"
+              name="defaultFreeform"
+              type="text"
+              placeholder="e.g. a tired parent / age 42"
+            />
+          </label>
+        </fieldset>
 
         <div class="actions">
           <button type="submit">Save</button>
