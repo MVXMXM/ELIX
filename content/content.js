@@ -1,7 +1,7 @@
 (() => {
   const HOST_ID = "elix-root";
   const LEVELS = ["5", "10", "15", "20"];
-  const SPOTLIGHT_PAD = 6;
+  const OVERLAY_FADE_MS = 220;
   // In-page highlight menus mount after mouseup; wait before placing the chip.
   const MENU_WAIT_MS = 220;
   const MENU_LATE_MS = 180;
@@ -11,13 +11,15 @@
 
   let host = null;
   let shadow = null;
-  let panel = null;
+  let promptBar = null;
+  let output = null;
   let scrim = null;
-  let focusRing = null;
+  let veil = null;
   let focusCatcher = null;
   let tip = null;
   let lastText = "";
   let lastRect = null;
+  let lastHoles = [];
   let showTimer = null;
   let menuObserver = null;
   let watchedNodes = [];
@@ -25,6 +27,8 @@
   let scrollLocked = false;
   let savedScrollY = 0;
   let previousOverflow = { html: "", body: "" };
+  let explainPort = null;
+  let overlayFadeTimer = null;
 
   function isEventFromUi(event) {
     if (!host) return false;
@@ -32,8 +36,8 @@
     return path.includes(host) || event.target === host;
   }
 
-  function isPanelOpen() {
-    return Boolean(panel && !panel.classList.contains("hidden"));
+  function isOverlayOpen() {
+    return Boolean(promptBar && !promptBar.classList.contains("hidden"));
   }
 
   function isTipOpen() {
@@ -41,15 +45,15 @@
   }
 
   function isOtherInputEvent(event) {
-    if (!panel) return false;
-    const input = panel.querySelector(".other input");
+    if (!promptBar) return false;
+    const input = promptBar.querySelector(".other input");
     if (!input) return false;
     const path = typeof event.composedPath === "function" ? event.composedPath() : [];
     return path.includes(input) || shadow?.activeElement === input;
   }
 
   function stopHostEnter(event) {
-    if (!isPanelOpen() || event.key !== "Enter") {
+    if (!isOverlayOpen() || event.key !== "Enter") {
       return;
     }
     if (event.isComposing || event.keyCode === 229) {
@@ -132,75 +136,71 @@
         .scrim {
           position: fixed;
           inset: 0;
-          background: rgba(12, 14, 16, 0.58);
+          pointer-events: none;
           cursor: default;
         }
 
-        .focus-ring {
+        .veil {
           position: fixed;
-          border-radius: 8px;
-          border: 1.5px solid rgba(232, 196, 104, 0.95);
-          box-shadow:
-            0 0 0 1px rgba(12, 14, 16, 0.35),
-            0 0 24px rgba(232, 196, 104, 0.28);
-          background: rgba(232, 196, 104, 0.08);
-          pointer-events: none;
+          inset: 0;
+          pointer-events: auto;
+          background: rgba(255, 255, 255, 0);
+          backdrop-filter: blur(0);
+          -webkit-backdrop-filter: blur(0);
+          -webkit-mask-repeat: no-repeat;
+          mask-repeat: no-repeat;
+          -webkit-mask-size: 100% 100%;
+          mask-size: 100% 100%;
+          -webkit-mask-source-type: luminance;
+          mask-mode: luminance;
+          transition:
+            background ${OVERLAY_FADE_MS}ms ease,
+            backdrop-filter ${OVERLAY_FADE_MS}ms ease,
+            -webkit-backdrop-filter ${OVERLAY_FADE_MS}ms ease;
+        }
+
+        .scrim.open .veil {
+          background: rgba(255, 255, 255, 0.58);
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
         }
 
         .focus-catcher {
           position: fixed;
-          border-radius: 8px;
           background: transparent;
         }
 
-        .panel {
+        .prompt-bar,
+        .output {
           position: fixed;
-          min-width: 240px;
-          max-width: min(360px, calc(100vw - 24px));
-          max-height: min(70vh, 520px);
-          overflow: auto;
-          padding: 12px;
-          border-radius: 14px;
-          background: #171a1d;
-          color: #f4f1ea;
-          font: 13px/1.4 "IBM Plex Sans", "Segoe UI", sans-serif;
-          box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
-          border: 1px solid rgba(244, 241, 234, 0.12);
+          z-index: 1;
+          color: #111;
+          font: 14px/1.4 "IBM Plex Sans", "Segoe UI", sans-serif;
+          opacity: 0;
+          transform: translateY(4px);
+          transition:
+            opacity ${OVERLAY_FADE_MS}ms ease,
+            transform ${OVERLAY_FADE_MS}ms ease;
         }
 
-        .header {
+        .prompt-bar.open,
+        .output.open {
+          opacity: 1;
+          transform: none;
+        }
+
+        .prompt-bar {
           display: flex;
+          flex-wrap: wrap;
           align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-          margin-bottom: 8px;
-        }
-
-        .brand {
-          font: 600 11px/1 "IBM Plex Mono", ui-monospace, monospace;
-          letter-spacing: 0.14em;
-          text-transform: uppercase;
-          color: #e8c468;
-        }
-
-        .close {
-          border: 0;
-          background: transparent;
-          color: rgba(244, 241, 234, 0.7);
-          font: 600 14px/1 "IBM Plex Sans", "Segoe UI", sans-serif;
-          padding: 4px 6px;
-          border-radius: 8px;
-          cursor: pointer;
-        }
-
-        .close:hover {
-          color: #f4f1ea;
-          background: rgba(244, 241, 234, 0.08);
+          gap: 8px 10px;
+          max-width: min(560px, calc(100vw - 24px));
         }
 
         .prompt {
-          margin: 0 0 10px;
-          color: rgba(244, 241, 234, 0.82);
+          margin: 0;
+          color: #111;
+          font: 600 14px/1.3 "IBM Plex Sans", "Segoe UI", sans-serif;
         }
 
         .levels {
@@ -211,9 +211,9 @@
 
         button.level, button.go {
           appearance: none;
-          border: 1px solid rgba(244, 241, 234, 0.18);
-          background: rgba(244, 241, 234, 0.06);
-          color: #f4f1ea;
+          border: 1px solid rgba(17, 17, 17, 0.22);
+          background: rgba(255, 255, 255, 0.55);
+          color: #111;
           border-radius: 999px;
           padding: 6px 10px;
           font: 600 12px/1 "IBM Plex Sans", "Segoe UI", sans-serif;
@@ -221,15 +221,15 @@
         }
 
         button.level:hover, button.go:hover {
-          background: rgba(232, 196, 104, 0.18);
-          border-color: #e8c468;
+          background: rgba(17, 17, 17, 0.06);
+          border-color: #111;
         }
 
         button:disabled { opacity: 0.55; cursor: wait; }
 
         .other {
-          margin-top: 8px;
           display: none;
+          flex: 1 1 100%;
           gap: 6px;
         }
 
@@ -239,22 +239,31 @@
           flex: 1;
           min-width: 0;
           border-radius: 10px;
-          border: 1px solid rgba(244, 241, 234, 0.18);
-          background: rgba(0, 0, 0, 0.25);
-          color: #f4f1ea;
+          border: 1px solid rgba(17, 17, 17, 0.22);
+          background: rgba(255, 255, 255, 0.72);
+          color: #111;
           padding: 7px 9px;
           font: 12px/1.3 "IBM Plex Sans", "Segoe UI", sans-serif;
         }
 
+        .other input::placeholder {
+          color: rgba(17, 17, 17, 0.45);
+        }
+
+        .output {
+          max-width: min(420px, calc(100vw - 24px));
+          max-height: min(48vh, 420px);
+          overflow: auto;
+          font: 15px/1.5 "IBM Plex Sans", "Segoe UI", sans-serif;
+        }
+
         .result, .error, .status {
-          margin-top: 10px;
-          padding-top: 10px;
-          border-top: 1px solid rgba(244, 241, 234, 0.12);
           white-space: pre-wrap;
         }
 
-        .error { color: #ffb4a8; }
-        .status { color: rgba(244, 241, 234, 0.7); }
+        .error { color: #b42318; }
+        .status { color: rgba(17, 17, 17, 0.5); }
+        .result { color: #111; }
 
         .tip {
           position: fixed;
@@ -289,22 +298,21 @@
         .hidden { display: none !important; }
       </style>
 
-      <div class="scrim hidden" part="scrim"></div>
+      <div class="scrim hidden" part="scrim">
+        <div class="veil"></div>
+      </div>
       <div class="focus-catcher hidden"></div>
-      <div class="focus-ring hidden"></div>
       <button type="button" class="tip hidden" aria-label="Explain with ELIX">ELIX</button>
 
-      <div class="panel hidden" part="panel">
-        <div class="header">
-          <div class="brand">ELIX</div>
-          <button type="button" class="close" data-action="close" aria-label="Close">✕</button>
-        </div>
+      <div class="prompt-bar hidden">
         <p class="prompt">Explain like I'm…</p>
         <div class="levels"></div>
         <div class="other">
           <input type="text" placeholder="e.g. a tired parent / age 42" />
           <button type="button" class="go" data-action="submit-other">Go</button>
         </div>
+      </div>
+      <div class="output hidden">
         <div class="status hidden"></div>
         <div class="result hidden"></div>
         <div class="error hidden"></div>
@@ -312,10 +320,11 @@
     `;
 
     scrim = shadow.querySelector(".scrim");
+    veil = shadow.querySelector(".veil");
     focusCatcher = shadow.querySelector(".focus-catcher");
-    focusRing = shadow.querySelector(".focus-ring");
     tip = shadow.querySelector(".tip");
-    panel = shadow.querySelector(".panel");
+    promptBar = shadow.querySelector(".prompt-bar");
+    output = shadow.querySelector(".output");
 
     const levels = shadow.querySelector(".levels");
 
@@ -339,22 +348,25 @@
       event.preventDefault();
       event.stopPropagation();
     });
-    scrim.addEventListener("click", () => hidePanel());
+    scrim.addEventListener("click", () => hideOverlay());
 
     focusCatcher.addEventListener("mousedown", (event) => {
       event.preventDefault();
       event.stopPropagation();
     });
+    focusCatcher.addEventListener("click", () => hideOverlay());
 
     // Keep page selection from being cleared when interacting with the overlay.
-    panel.addEventListener("mousedown", (event) => {
+    const preserveSelection = (event) => {
       event.preventDefault();
       event.stopPropagation();
-    });
+    };
+    promptBar.addEventListener("mousedown", preserveSelection);
+    output.addEventListener("mousedown", preserveSelection);
 
-    panel.addEventListener("click", onPanelClick);
+    promptBar.addEventListener("click", onPromptClick);
 
-    const otherInput = panel.querySelector(".other input");
+    const otherInput = promptBar.querySelector(".other input");
     otherInput.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) {
         return;
@@ -397,11 +409,11 @@
     tip.classList.add("hidden");
   }
 
-  function paddedRect(rect) {
-    const top = Math.max(0, rect.top - SPOTLIGHT_PAD);
-    const left = Math.max(0, rect.left - SPOTLIGHT_PAD);
-    const right = Math.min(window.innerWidth, rect.right + SPOTLIGHT_PAD);
-    const bottom = Math.min(window.innerHeight, rect.bottom + SPOTLIGHT_PAD);
+  function holeFromRect(rect) {
+    const top = Math.max(0, rect.top);
+    const left = Math.max(0, rect.left);
+    const right = Math.min(window.innerWidth, rect.right);
+    const bottom = Math.min(window.innerHeight, rect.bottom);
 
     return {
       top,
@@ -413,102 +425,183 @@
     };
   }
 
-  function updateSpotlight(rect) {
-    const hole = paddedRect(rect);
+  function updateSpotlight() {
+    const rects = (lastHoles.length ? lastHoles : lastRect ? [lastRect] : [])
+      .map(holeFromRect)
+      .filter((hole) => hole.width > 0 && hole.height > 0);
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const cuts = rects
+      .map((hole) => {
+        const top = Math.round(hole.top);
+        const left = Math.round(hole.left);
+        const width = Math.max(1, Math.round(hole.width));
+        const height = Math.max(1, Math.round(hole.height));
+        return `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="black"/>`;
+      })
+      .join("");
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${vw}" height="${vh}">` +
+      `<rect width="100%" height="100%" fill="white"/>` +
+      cuts +
+      `</svg>`;
+    const mask = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+    veil.style.webkitMaskImage = mask;
+    veil.style.maskImage = mask;
 
-    // Full-page dim with a clear cutout over the selected text.
-    scrim.style.clipPath = `polygon(
-      evenodd,
-      0px 0px,
-      100% 0px,
-      100% 100%,
-      0px 100%,
-      0px 0px,
-      ${hole.left}px ${hole.top}px,
-      ${hole.left}px ${hole.bottom}px,
-      ${hole.right}px ${hole.bottom}px,
-      ${hole.right}px ${hole.top}px,
-      ${hole.left}px ${hole.top}px
-    )`;
+    const bounds = lastRect ? holeFromRect(lastRect) : rects[0];
+    if (!bounds) return;
 
-    const box = {
-      top: `${Math.round(hole.top)}px`,
-      left: `${Math.round(hole.left)}px`,
-      width: `${Math.round(hole.width)}px`,
-      height: `${Math.round(hole.height)}px`,
-    };
+    Object.assign(focusCatcher.style, {
+      top: `${Math.round(bounds.top)}px`,
+      left: `${Math.round(bounds.left)}px`,
+      width: `${Math.round(bounds.width)}px`,
+      height: `${Math.round(bounds.height)}px`,
+    });
+  }
 
-    Object.assign(focusRing.style, box);
-    Object.assign(focusCatcher.style, box);
+  function fadeOpen(el) {
+    if (!el) return;
+    if (!el.classList.contains("hidden") && el.classList.contains("open")) {
+      return;
+    }
+    el.classList.remove("hidden");
+    el.classList.remove("open");
+    void el.offsetWidth;
+    el.classList.add("open");
   }
 
   function setBusy(busy) {
-    panel.querySelectorAll("button").forEach((button) => {
+    promptBar.querySelectorAll("button").forEach((button) => {
       button.disabled = busy;
     });
-    const input = panel.querySelector(".other input");
+    const input = promptBar.querySelector(".other input");
     if (input) input.disabled = busy;
   }
 
   function showStatus(text) {
-    const status = panel.querySelector(".status");
-    const result = panel.querySelector(".result");
-    const error = panel.querySelector(".error");
+    const status = output.querySelector(".status");
+    const result = output.querySelector(".result");
+    const error = output.querySelector(".error");
     status.textContent = text || "";
     status.classList.toggle("hidden", !text);
     result.classList.add("hidden");
     error.classList.add("hidden");
+    if (text) {
+      fadeOpen(output);
+    } else {
+      output.classList.remove("open");
+      output.classList.add("hidden");
+    }
   }
 
   function showResult(text) {
-    const status = panel.querySelector(".status");
-    const result = panel.querySelector(".result");
-    const error = panel.querySelector(".error");
+    const status = output.querySelector(".status");
+    const result = output.querySelector(".result");
+    const error = output.querySelector(".error");
+    fadeOpen(output);
     status.classList.add("hidden");
     error.classList.add("hidden");
     result.textContent = text;
-    result.classList.remove("hidden");
+    result.classList.toggle("hidden", !text);
   }
 
   function showError(text) {
-    const status = panel.querySelector(".status");
-    const result = panel.querySelector(".result");
-    const error = panel.querySelector(".error");
+    const status = output.querySelector(".status");
+    const result = output.querySelector(".result");
+    const error = output.querySelector(".error");
+    fadeOpen(output);
     status.classList.add("hidden");
     result.classList.add("hidden");
     error.textContent = text;
     error.classList.remove("hidden");
   }
 
-  async function requestExplain(level, freeform) {
+  function abortExplain() {
+    if (!explainPort) return;
+    const port = explainPort;
+    explainPort = null;
+    try {
+      port.disconnect();
+    } catch {
+      // Port may already be gone if the worker went idle mid-stream.
+    }
+  }
+
+  function requestExplain(level, freeform) {
     if (!lastText.trim()) {
       showError("No text captured from the selection.");
       return;
     }
 
+    abortExplain();
     setBusy(true);
+    output.querySelector(".result").textContent = "";
     showStatus("Thinking…");
 
+    let port;
     try {
-      const response = await chrome.runtime.sendMessage({
-        type: "ELIX_EXPLAIN",
-        payload: { text: lastText, level, freeform },
-      });
+      port = chrome.runtime.connect({ name: "elix-explain" });
+    } catch (error) {
+      setBusy(false);
+      showError(error?.message || String(error));
+      return;
+    }
 
-      if (!response?.ok) {
-        throw new Error(response?.error || "Something went wrong.");
+    explainPort = port;
+    let explanation = "";
+
+    port.onMessage.addListener((message) => {
+      if (port !== explainPort) return;
+
+      if (message.type === "chunk") {
+        explanation += message.text;
+        showResult(explanation);
+        return;
       }
 
-      showResult(response.explanation);
-    } catch (error) {
-      showError(error?.message || String(error));
-    } finally {
+      if (message.type === "done") {
+        if (!explanation.trim()) {
+          showError("The model returned an empty response.");
+        }
+        setBusy(false);
+        explainPort = null;
+        try {
+          port.disconnect();
+        } catch {
+          // Already closed after the final chunk.
+        }
+        return;
+      }
+
+      if (message.type === "error") {
+        showError(message.error || "Something went wrong.");
+        setBusy(false);
+        explainPort = null;
+        try {
+          port.disconnect();
+        } catch {
+          // Already closed after the error.
+        }
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      if (port !== explainPort) return;
+      explainPort = null;
       setBusy(false);
-    }
+      const err = chrome.runtime.lastError?.message;
+      if (err) showError(err);
+    });
+
+    port.postMessage({
+      type: "ELIX_EXPLAIN",
+      payload: { text: lastText, level, freeform },
+    });
   }
 
   function submitOther() {
-    const input = panel.querySelector(".other input");
+    const input = promptBar.querySelector(".other input");
     if (input.disabled) {
       return;
     }
@@ -521,19 +614,15 @@
     requestExplain("other", value);
   }
 
-  function onPanelClick(event) {
+  function onPromptClick(event) {
     const button = event.target.closest("button");
     if (!button) return;
 
-    if (button.dataset.action === "close") {
-      hidePanel();
-      return;
-    }
-
     if (button.dataset.action === "other") {
-      const other = panel.querySelector(".other");
+      const other = promptBar.querySelector(".other");
       other.classList.add("open");
-      queueMicrotask(() => panel.querySelector(".other input").focus());
+      if (lastRect) positionOverlay(lastRect);
+      queueMicrotask(() => promptBar.querySelector(".other input").focus());
       return;
     }
 
@@ -547,22 +636,33 @@
     }
   }
 
-  function positionPanel(rect) {
-    const gap = 12;
-    const width = Math.min(360, window.innerWidth - 24);
-    let top = rect.bottom + gap + SPOTLIGHT_PAD;
-    let left = rect.left;
+  function positionOverlay(rect) {
+    if (!promptBar || !rect) return;
 
-    if (top + 200 > window.innerHeight) {
-      top = Math.max(12, rect.top - gap - SPOTLIGHT_PAD - 180);
-    }
-    if (left + width > window.innerWidth - 12) {
-      left = window.innerWidth - width - 12;
-    }
-    left = Math.max(12, left);
+    const gap = 14;
+    const hole = holeFromRect(rect);
 
-    panel.style.top = `${Math.round(top)}px`;
-    panel.style.left = `${Math.round(left)}px`;
+    promptBar.style.maxWidth = `${Math.min(560, window.innerWidth - VIEW_MARGIN * 2)}px`;
+
+    const barWidth = promptBar.offsetWidth;
+    const barHeight = promptBar.offsetHeight;
+    let barTop = hole.top - barHeight - gap;
+    if (barTop < VIEW_MARGIN) {
+      barTop = VIEW_MARGIN;
+    }
+
+    const maxLeft = Math.max(VIEW_MARGIN, window.innerWidth - barWidth - VIEW_MARGIN);
+    const barLeft = Math.min(Math.max(VIEW_MARGIN, hole.left), maxLeft);
+
+    promptBar.style.top = `${Math.round(barTop)}px`;
+    promptBar.style.left = `${Math.round(barLeft)}px`;
+
+    const outMax = Math.min(420, window.innerWidth - VIEW_MARGIN * 2);
+    const outTop = hole.bottom + gap;
+    output.style.maxWidth = `${outMax}px`;
+    output.style.top = `${Math.round(outTop)}px`;
+    output.style.left = `${Math.round(barLeft)}px`;
+    output.style.maxHeight = `${Math.max(80, window.innerHeight - outTop - VIEW_MARGIN)}px`;
   }
 
   function hideTip() {
@@ -570,30 +670,41 @@
     tip.classList.add("hidden");
   }
 
-  function hidePanel() {
-    if (!panel) return;
+  function hideOverlay() {
+    if (!promptBar || promptBar.classList.contains("hidden")) return;
 
-    panel.classList.add("hidden");
-    scrim.classList.add("hidden");
-    focusRing.classList.add("hidden");
-    focusCatcher.classList.add("hidden");
+    abortExplain();
+    clearTimeout(overlayFadeTimer);
 
-    panel.querySelector(".other").classList.remove("open");
-    panel.querySelector(".other input").value = "";
-    panel.querySelector(".status").classList.add("hidden");
-    panel.querySelector(".result").classList.add("hidden");
-    panel.querySelector(".error").classList.add("hidden");
+    scrim.classList.remove("open");
+    promptBar.classList.remove("open");
+    output.classList.remove("open");
 
-    lastRect = null;
-    lastText = "";
-    cancelScheduledTip();
-    hideTip();
-    unlockScroll();
+    overlayFadeTimer = setTimeout(() => {
+      promptBar.classList.add("hidden");
+      output.classList.add("hidden");
+      scrim.classList.add("hidden");
+      focusCatcher.classList.add("hidden");
 
-    const selection = window.getSelection();
-    if (selection && !selection.isCollapsed) {
-      selection.removeAllRanges();
-    }
+      promptBar.querySelector(".other").classList.remove("open");
+      promptBar.querySelector(".other input").value = "";
+      output.querySelector(".status").classList.add("hidden");
+      output.querySelector(".result").classList.add("hidden");
+      output.querySelector(".result").textContent = "";
+      output.querySelector(".error").classList.add("hidden");
+
+      lastRect = null;
+      lastHoles = [];
+      lastText = "";
+      cancelScheduledTip();
+      hideTip();
+      unlockScroll();
+
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed) {
+        selection.removeAllRanges();
+      }
+    }, OVERLAY_FADE_MS);
   }
 
   function boxFromRect(rect) {
@@ -916,20 +1027,23 @@
       return null;
     }
 
-    const clientRects = range.getClientRects();
-    const first = clientRects.length ? boxFromRect(clientRects[0]) : rect;
-    const line = clientRects.length ? boxFromRect(clientRects[clientRects.length - 1]) : rect;
+    const clientRects = [...range.getClientRects()].map(boxFromRect);
+    const first = clientRects[0] || rect;
+    const line = clientRects[clientRects.length - 1] || rect;
+    const holes = clientRects.filter((box) => box.width && box.height);
+    if (!holes.length) holes.push(rect);
 
-    return { text, rect, first, line, range };
+    return { text, rect, first, line, range, holes };
   }
 
   function storeCapture(captured) {
     lastText = captured.text;
     lastRect = captured.rect;
+    lastHoles = captured.holes?.length ? captured.holes : [captured.rect];
   }
 
   function revealTip(captured) {
-    if (isPanelOpen()) return;
+    if (isOverlayOpen()) return;
 
     const live = readSelection();
     const current = live && live.text === captured.text ? live : captured;
@@ -941,7 +1055,7 @@
   }
 
   function showTipForSelection() {
-    if (isPanelOpen()) return;
+    if (isOverlayOpen()) return;
 
     const captured = readSelection();
     if (!captured) {
@@ -955,13 +1069,13 @@
     revealTip(captured);
 
     showTimer = setTimeout(() => {
-      if (!isTipOpen() || isPanelOpen()) {
+      if (!isTipOpen() || isOverlayOpen()) {
         stopMenuWatch();
         return;
       }
       revealTip(captured);
       showTimer = setTimeout(() => {
-        if (!isTipOpen() || isPanelOpen()) {
+        if (!isTipOpen() || isOverlayOpen()) {
           stopMenuWatch();
           return;
         }
@@ -972,7 +1086,7 @@
   }
 
   function scheduleTip() {
-    if (isPanelOpen()) return;
+    if (isOverlayOpen()) return;
     cancelScheduledTip();
     hideTip();
     showTimer = setTimeout(showTipForSelection, 16);
@@ -992,20 +1106,23 @@
     }
 
     ensureUi();
-    updateSpotlight(lastRect);
-    positionPanel(lastRect);
+    updateSpotlight();
 
-    scrim.classList.remove("hidden");
-    focusRing.classList.remove("hidden");
+    clearTimeout(overlayFadeTimer);
     focusCatcher.classList.remove("hidden");
-    panel.classList.remove("hidden");
+    fadeOpen(scrim);
+    fadeOpen(promptBar);
+    output.classList.remove("open");
+    output.classList.add("hidden");
     lockScroll();
 
-    panel.querySelector(".other").classList.remove("open");
-    panel.querySelector(".other input").value = "";
-    showStatus("");
-    panel.querySelector(".result").classList.add("hidden");
-    panel.querySelector(".error").classList.add("hidden");
+    promptBar.querySelector(".other").classList.remove("open");
+    promptBar.querySelector(".other input").value = "";
+    output.querySelector(".status").classList.add("hidden");
+    output.querySelector(".result").classList.add("hidden");
+    output.querySelector(".result").textContent = "";
+    output.querySelector(".error").classList.add("hidden");
+    positionOverlay(lastRect);
   }
 
   document.addEventListener(
@@ -1013,7 +1130,7 @@
     (event) => {
       if (event.button !== 0) return;
       if (isEventFromUi(event)) return;
-      if (isPanelOpen()) return;
+      if (isOverlayOpen()) return;
       scheduleTip();
     },
     true
@@ -1022,12 +1139,12 @@
   document.addEventListener("keyup", (event) => {
     if (event.key !== "Shift") return;
     if (isEventFromUi(event)) return;
-    if (isPanelOpen()) return;
+    if (isOverlayOpen()) return;
     scheduleTip();
   });
 
   document.addEventListener("selectionchange", () => {
-    if (isPanelOpen()) return;
+    if (isOverlayOpen()) return;
 
     const selection = window.getSelection();
     const text = selection?.toString().trim() || "";
@@ -1045,7 +1162,7 @@
   window.addEventListener(
     "scroll",
     () => {
-      if (isPanelOpen()) return;
+      if (isOverlayOpen()) return;
       cancelScheduledTip();
       hideTip();
     },
@@ -1053,7 +1170,11 @@
   );
 
   window.addEventListener("resize", () => {
-    if (isPanelOpen()) return;
+    if (isOverlayOpen() && lastRect) {
+      updateSpotlight();
+      positionOverlay(lastRect);
+      return;
+    }
     cancelScheduledTip();
     hideTip();
   });
@@ -1061,9 +1182,9 @@
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
 
-    if (isPanelOpen()) {
+    if (isOverlayOpen()) {
       event.preventDefault();
-      hidePanel();
+      hideOverlay();
       return;
     }
 

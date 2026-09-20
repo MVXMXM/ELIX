@@ -27,7 +27,48 @@ function buildPrompt(text, level, freeform) {
   ].join("\n");
 }
 
-async function explainText({ text, level, freeform }) {
+async function* readSse(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const takeTokens = function* (text) {
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+
+      const data = trimmed.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+
+      let json;
+      try {
+        json = JSON.parse(data);
+      } catch {
+        continue;
+      }
+
+      const token = json?.choices?.[0]?.delta?.content;
+      if (token) yield token;
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      buffer += decoder.decode();
+      yield* takeTokens(buffer);
+      return;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split(/\r?\n/);
+    buffer = parts.pop() ?? "";
+    yield* takeTokens(parts.join("\n"));
+  }
+}
+
+async function explainTextStream({ text, level, freeform }, signal, onChunk) {
   const settings = await getSettings();
 
   if (!settings.apiKey) {
@@ -45,9 +86,11 @@ async function explainText({ text, level, freeform }) {
       "Content-Type": "application/json",
       Authorization: `Bearer ${settings.apiKey}`,
     },
+    signal,
     body: JSON.stringify({
       model: settings.model,
       temperature: 0.4,
+      stream: true,
       messages: [
         {
           role: "user",
@@ -57,34 +100,65 @@ async function explainText({ text, level, freeform }) {
     }),
   });
 
-  const data = await response.json().catch(() => ({}));
-
   if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
     const message =
       data?.error?.message || `API request failed (${response.status})`;
     throw new Error(message);
   }
 
-  const explanation = data?.choices?.[0]?.message?.content?.trim();
-  if (!explanation) {
+  if (!response.body) {
     throw new Error("The model returned an empty response.");
   }
 
-  return explanation;
+  for await (const token of readSse(response)) {
+    onChunk(token);
+  }
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== "ELIX_EXPLAIN") {
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "elix-explain") {
     return;
   }
 
-  explainText(message.payload)
-    .then((explanation) => sendResponse({ ok: true, explanation }))
-    .catch((error) =>
-      sendResponse({ ok: false, error: error?.message || String(error) })
-    );
+  const abort = new AbortController();
+  let open = true;
 
-  return true;
+  function post(payload) {
+    if (!open) return;
+    try {
+      port.postMessage(payload);
+    } catch {
+      open = false;
+      abort.abort();
+    }
+  }
+
+  port.onDisconnect.addListener(() => {
+    open = false;
+    abort.abort();
+  });
+
+  port.onMessage.addListener((message) => {
+    if (message?.type !== "ELIX_EXPLAIN") {
+      return;
+    }
+
+    explainTextStream(message.payload, abort.signal, (text) => {
+      post({ type: "chunk", text });
+    })
+      .then(() => {
+        if (abort.signal.aborted) return;
+        post({ type: "done" });
+      })
+      .catch((error) => {
+        if (error?.name === "AbortError" || abort.signal.aborted) return;
+        post({
+          type: "error",
+          error: error?.message || String(error),
+        });
+      });
+  });
 });
 
 chrome.action.onClicked.addListener(() => {
