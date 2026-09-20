@@ -40,6 +40,37 @@
     return Boolean(tip && !tip.classList.contains("hidden"));
   }
 
+  function isOtherInputEvent(event) {
+    if (!panel) return false;
+    const input = panel.querySelector(".other input");
+    if (!input) return false;
+    const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+    return path.includes(input) || shadow?.activeElement === input;
+  }
+
+  function stopHostEnter(event) {
+    if (!isPanelOpen() || event.key !== "Enter") {
+      return;
+    }
+    if (event.isComposing || event.keyCode === 229) {
+      return;
+    }
+    if (!isOtherInputEvent(event)) {
+      return;
+    }
+
+    // Word / contenteditable still own the preserved highlight. Enter is
+    // composed, so a page capture listener would replace that selection
+    // before the input's own handler runs.
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    if (event.type === "keydown") {
+      submitOther();
+    }
+  }
+
   function preventPageScroll(event) {
     if (isEventFromUi(event)) {
       return;
@@ -325,10 +356,12 @@
 
     const otherInput = panel.querySelector(".other input");
     otherInput.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        submitOther();
+      if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) {
+        return;
       }
+      event.preventDefault();
+      event.stopPropagation();
+      submitOther();
     });
 
     // Allow typing in the freeform field (mousedown preventDefault would block focus).
@@ -475,7 +508,12 @@
   }
 
   function submitOther() {
-    const value = panel.querySelector(".other input").value.trim();
+    const input = panel.querySelector(".other input");
+    if (input.disabled) {
+      return;
+    }
+
+    const value = input.value.trim();
     if (!value) {
       showError("Describe the persona or audience first.");
       return;
@@ -1035,4 +1073,8 @@
       hideTip();
     }
   });
+
+  window.addEventListener("keydown", stopHostEnter, true);
+  window.addEventListener("keypress", stopHostEnter, true);
+  window.addEventListener("keyup", stopHostEnter, true);
 })();
