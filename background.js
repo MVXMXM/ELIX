@@ -10,17 +10,48 @@ async function getSettings() {
 }
 
 function buildPrompt(text, level, freeform) {
-  const audienceLine = freeform
-    ? `Explain the highlighted text for this persona/audience: ${freeform}`
-    : `Explain this like the reader is ${level} years old.`;
+  const persona = freeform?.trim();
+
+  if (persona) {
+    return [
+      "You are ELIX. Define the highlighted text fully as this persona:",
+      persona,
+      "Commit. Take their language, nationality, species, job, era, or medium as the actual output, not as flavor sprinkled on English.",
+      "If a language or nationality is named, write the entire definition in that language.",
+      "If an animal or nonhuman is named, write in their voice (meows, barks, chirps, beeps) so a human can still recover the meaning.",
+      "Bend tone, vocabulary, and form as far as the persona requires. Be willing to be strange, comic, or lyrical.",
+      "Do not add a translation, stage direction, or note about what you are doing.",
+      "Do not repeat or quote the highlighted wording.",
+      "One prominent sense only. Plain text. No markdown, headings, lists, or labels.",
+      "Write only the in-persona definition.",
+      "",
+      "Highlighted text:",
+      text,
+    ].join("\n");
+  }
+
+  const childReader = Number(level) <= 10;
+  const voice = childReader
+    ? [
+        "Voice: a children's dictionary for that age. Simple, concrete, kind.",
+        "Keep the kid-friendly clarity of a picture-glossary: short words, familiar things, no baby talk and no lecture.",
+        "Still a definition, not a story, chat, or pep talk.",
+      ]
+    : [
+        "Voice: lexical, succinct, academic. Declarative sentences only.",
+        "Scale the concepts and vocabulary to that reader's mental model.",
+      ];
 
   return [
-    "You are ELIX, a clear and friendly explainer.",
-    audienceLine,
-    "Adopt that persona's likely knowledge, tone, and concerns.",
-    "Keep the answer focused on the highlighted text.",
-    "Use plain language. Avoid jargon unless you briefly define it.",
-    "Be concise: a short paragraph or a few short bullets.",
+    "You are ELIX. Write a dictionary gloss of the highlighted text.",
+    `Reader: a ${level}-year-old.`,
+    ...voice,
+    "Do not address the reader. No questions, asides, prefaces, or chatty framing.",
+    "Do not use phrases such as \"imagine\", \"basically\", \"this means\", or \"in simple terms\".",
+    "Do not repeat, quote, or italicize the highlighted wording; the reader can already see it.",
+    "Give only the single most prominent sense. Never list alternate meanings or numbered senses.",
+    "One or two sentences of plain text. No markdown, headings, lists, or labels.",
+    "Write only the definition.",
     "",
     "Highlighted text:",
     text,
