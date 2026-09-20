@@ -411,7 +411,7 @@
         <p class="prompt">Explain like I'm…</p>
         <div class="levels"></div>
         <div class="other">
-          <input type="text" placeholder="e.g. a tired parent / age 42" />
+          <input type="text" placeholder="e.g. French / a cat / a tired parent" />
           <button type="button" class="go" data-action="submit-other">Go</button>
         </div>
         <div class="setup">
@@ -880,10 +880,8 @@
 
     const barWidth = promptBar.offsetWidth;
     const barHeight = promptBar.offsetHeight;
-    let barTop = hole.top - barHeight - gap;
-    if (barTop < VIEW_MARGIN) {
-      barTop = VIEW_MARGIN;
-    }
+    const maxBarTop = Math.max(VIEW_MARGIN, window.innerHeight - barHeight - VIEW_MARGIN);
+    const barTop = Math.min(Math.max(VIEW_MARGIN, hole.bottom + gap), maxBarTop);
 
     const maxLeft = Math.max(VIEW_MARGIN, window.innerWidth - barWidth - VIEW_MARGIN);
     const barLeft = Math.min(Math.max(VIEW_MARGIN, hole.left), maxLeft);
@@ -892,7 +890,7 @@
     promptBar.style.left = `${Math.round(barLeft)}px`;
 
     const outMax = Math.min(420, window.innerWidth - VIEW_MARGIN * 2);
-    const outTop = hole.bottom + gap;
+    const outTop = barTop + barHeight + gap;
     output.style.maxWidth = `${outMax}px`;
     output.style.top = `${Math.round(outTop)}px`;
     output.style.left = `${Math.round(barLeft)}px`;
