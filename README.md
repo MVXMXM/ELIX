@@ -24,8 +24,15 @@ Clicking the toolbar icon also opens Options.
 3. Service worker calls OpenAI Chat Completions with your stored key
 4. Explanation is returned into the overlay
 
+## Known limitations
+
+The chip only appears when the page exposes a normal HTML selection (`window.getSelection()` and a DOM range).
+
+- **PDFs.** Chrome shows these in its built-in viewer, an internal extension page. ELIX's content script is not injected there, so a highlight never produces a chip. That includes local `file://` files.
+- **Google Docs.** The script does load on `docs.google.com`, but the document is drawn on a canvas and the selection belongs to Docs. The page selection stays empty, and the editor's text target sits in an iframe this script does not enter.
+- **Other iframes.** The content script runs in the top frame only. A highlight inside an embedded frame is not visible to it.
+
 ## Notes
 
-- Start on ordinary HTML pages; Google Docs / PDFs / some iframes are harder
 - Key is stored in `chrome.storage.sync` and used only in the service worker
 - `base URL` can point at an OpenAI-compatible endpoint if you change `host_permissions` in `manifest.json` to match
