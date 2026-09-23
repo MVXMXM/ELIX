@@ -26,17 +26,20 @@
         Try early preview
       </a>
     </main>
-    <div class="selection-action" hidden>
-      <button type="button">Explain selection</button>
+    <button class="tip" type="button" hidden aria-label="Explain with ELIX">ELIX</button>
+    <div class="prompt-bar" hidden>
+      <p class="prompt">Explain like I'm...</p>
+      <div class="levels">
+        <button type="button" data-level="5">5</button>
+        <button type="button" data-level="10">10</button>
+        <button type="button" data-level="15">15</button>
+        <button type="button" data-level="20">20</button>
+      </div>
     </div>
-    <aside class="explanation" hidden aria-live="polite">
-      <button class="close-explanation" type="button" aria-label="Close explanation">
-        ×
-      </button>
-      <p class="explanation-label">ELIX</p>
-      <p class="explanation-status">Thinking...</p>
-      <p class="explanation-result"></p>
-    </aside>
+    <div class="output" hidden aria-live="polite">
+      <div class="status">Thinking...</div>
+      <div class="result"></div>
+    </div>
     <script src="script.js"></script>
   </body>
 </html>

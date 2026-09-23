@@ -11,7 +11,7 @@ const mimeTypes = {
   ".js": "text/javascript; charset=utf-8",
 };
 
-async function explain(text) {
+async function explain(text, level) {
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured.");
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -26,8 +26,7 @@ async function explain(text) {
         {
           role: "user",
           content:
-            "Define the highlighted text in one or two succinct sentences. Use plain language calibrated for a general reader. Return only the definition, with no markdown or preface.\n\nHighlighted text:\n" +
-            text,
+            `You are ELIX. Write a dictionary gloss for a ${level}-year-old. Use simple, concrete, kind language. Define the highlighted text in one or two succinct sentences. Return only the definition, with no markdown or preface.\n\nHighlighted text:\n${text}`,
         },
       ],
     }),
@@ -42,9 +41,13 @@ const server = http.createServer(async (request, response) => {
     let body = "";
     for await (const chunk of request) body += chunk;
     try {
-      const text = JSON.parse(body).text?.trim();
+      const payload = JSON.parse(body);
+      const text = payload.text?.trim();
+      const level = ["5", "10", "15", "20"].includes(String(payload.level))
+        ? String(payload.level)
+        : "5";
       if (!text || text.length > 280) throw new Error("Select up to 280 characters.");
-      const explanation = await explain(text);
+      const explanation = await explain(text, level);
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ explanation }));
     } catch (error) {

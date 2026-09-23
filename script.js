@@ -1,75 +1,87 @@
 (() => {
-  const action = document.querySelector(".selection-action");
-  const explainButton = action.querySelector("button");
-  const explanation = document.querySelector(".explanation");
-  const closeButton = explanation.querySelector(".close-explanation");
-  const status = explanation.querySelector(".explanation-status");
-  const result = explanation.querySelector(".explanation-result");
+  const main = document.querySelector("main");
+  const tip = document.querySelector(".tip");
+  const promptBar = document.querySelector(".prompt-bar");
+  const output = document.querySelector(".output");
+  const status = output.querySelector(".status");
+  const result = output.querySelector(".result");
   let selectedText = "";
+  let selectionRect = null;
 
-  function hideAction() {
-    action.hidden = true;
+  function position(element, rect, gap = 8) {
+    element.hidden = false;
+    const left = Math.max(12, Math.min(window.innerWidth - element.offsetWidth - 12, rect.left));
+    const top = Math.max(12, Math.min(window.innerHeight - element.offsetHeight - 12, rect.bottom + gap));
+    element.style.left = `${left}px`;
+    element.style.top = `${top}px`;
   }
 
-  function showAction() {
-    const selection = window.getSelection();
-    const text = selection?.toString().trim() || "";
-    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+  function hideTip() {
+    tip.hidden = true;
+  }
 
-    if (!text || !range || !document.querySelector("main").contains(range.commonAncestorContainer)) {
-      selectedText = "";
-      hideAction();
+  function readSelection() {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
+    const text = selection.toString().trim();
+    const range = selection.getRangeAt(0);
+    if (!text || text.length < 2 || !main.contains(range.commonAncestorContainer)) return null;
+    const rect = range.getBoundingClientRect();
+    if (!rect.width && !rect.height) return null;
+    return { text: text.slice(0, 280), rect };
+  }
+
+  function showTip() {
+    if (!promptBar.hidden) return;
+    const captured = readSelection();
+    if (!captured) {
+      hideTip();
       return;
     }
-
-    selectedText = text.slice(0, 280);
-    action.hidden = false;
-    const rect = range.getBoundingClientRect();
-    action.style.left = `${Math.min(
-      window.innerWidth - action.offsetWidth - 16,
-      Math.max(16, rect.left + rect.width / 2 - action.offsetWidth / 2)
-    )}px`;
-    action.style.top = `${Math.max(16, rect.bottom + 10)}px`;
+    selectedText = captured.text;
+    selectionRect = captured.rect;
+    requestAnimationFrame(() => position(tip, selectionRect));
   }
 
-  async function explain() {
-    if (!selectedText) return;
-    hideAction();
-    explanation.hidden = false;
-    explanation.classList.add("is-loading");
+  async function explain(level) {
+    hideTip();
+    promptBar.hidden = false;
+    output.hidden = false;
     status.hidden = false;
     result.textContent = "";
-
+    position(promptBar, selectionRect);
     try {
       const response = await fetch("/api/explain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: selectedText }),
+        body: JSON.stringify({ text: selectedText, level }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Unable to explain that selection.");
+      if (!response.ok) throw new Error(data.error || "Something went wrong.");
       result.textContent = data.explanation;
       status.hidden = true;
     } catch (error) {
       result.textContent = error.message;
       status.hidden = true;
-    } finally {
-      explanation.classList.remove("is-loading");
     }
   }
 
+  tip.addEventListener("mousedown", (event) => event.preventDefault());
+  tip.addEventListener("click", () => {
+    hideTip();
+    promptBar.hidden = false;
+    position(promptBar, selectionRect);
+  });
+  promptBar.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-level]");
+    if (button) explain(button.dataset.level);
+  });
   document.addEventListener("mouseup", (event) => {
-    if (!action.contains(event.target) && !explanation.contains(event.target)) {
-      window.setTimeout(showAction, 0);
+    if (!tip.contains(event.target) && !promptBar.contains(event.target)) {
+      window.setTimeout(showTip, 0);
     }
   });
   document.addEventListener("selectionchange", () => {
-    if (!explanation.hidden) return;
-    window.setTimeout(showAction, 0);
-  });
-  explainButton.addEventListener("click", explain);
-  closeButton.addEventListener("click", () => {
-    explanation.hidden = true;
-    selectedText = "";
+    if (promptBar.hidden) window.setTimeout(showTip, 0);
   });
 })();
