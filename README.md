@@ -1,12 +1,12 @@
-# ELIX
+# ELIX (alpha preview)
 
-Browser extension that explains highlighted text at a chosen level — like you're 5, 10, 15, 20, or a freeform age/style.
+A browser extension to look up anything in situ by simply highlighting text and selecting your complexity level: explain like I'm 5, 10, 15, 20, or input your own persona.
 
 ## Status
 
-Working Manifest V3 prototype: selection overlay + BYOK OpenAI call from the service worker.
+Working Manifest V3 BYOK prototype.
 
-## Load in Chrome
+## Chromium Alpha Test
 
 1. Open `chrome://extensions`
 2. Enable **Developer mode**
@@ -14,8 +14,6 @@ Working Manifest V3 prototype: selection overlay + BYOK OpenAI call from the ser
 4. Select this folder (`ELIX`)
 5. Open the extension’s **Options** page and paste your OpenAI API key
 6. Highlight text on any normal webpage and click **ELIX** — it explains at your default level (5, unless you change it in Options)
-
-Clicking the toolbar icon also opens Options.
 
 ## How it works
 
