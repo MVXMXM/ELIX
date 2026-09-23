@@ -9,6 +9,14 @@
   const TIP_GAP = 8;
   const MENU_PROXIMITY = 64;
   const VIEW_MARGIN = 8;
+  // A long highlight already carries its meaning. Shorter ones get a passage.
+  const CONTEXT_SKIP_AT = 280;
+  const CONTEXT_CAP = 400;
+  const CONTEXT_FETCH = 700;
+  const CONTEXT_WIDEN_BELOW = 80;
+  const CONTEXT_MIN_EXTRA = 12;
+  const CONTEXT_BLOCK_SELECTOR =
+    "p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th, figcaption, dd, dt, pre, caption";
 
   let host = null;
   let shadow = null;
@@ -20,6 +28,7 @@
   let focusCatcher = null;
   let tip = null;
   let lastText = "";
+  let lastContext = "";
   let lastRect = null;
   let lastHoles = [];
   let lastRange = null;
@@ -739,7 +748,7 @@
 
     port.postMessage({
       type: "ELIX_EXPLAIN",
-      payload: { text: lastText, level, freeform },
+      payload: { text: lastText, context: lastContext, level, freeform },
     });
   }
 
@@ -933,6 +942,7 @@
       lastHoles = [];
       lastRange = null;
       lastText = "";
+      lastContext = "";
       if (marks) marks.replaceChildren();
       cancelScheduledTip();
       hideTip();
@@ -1235,6 +1245,379 @@
     tip.style.top = `${Math.round(picked.top)}px`;
   }
 
+  function isSentenceAbbreviation(textBeforePunct) {
+    const match = textBeforePunct.match(/(?:[A-Za-z]\.)*[A-Za-z]+$/);
+    if (!match) return false;
+    const word = match[0];
+    if (/^(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|vs|etc|St|Inc|Ltd|Fig|cf|al)$/i.test(word)) return true;
+    return /^(?:[A-Za-z]\.)+[A-Za-z]?$/i.test(word);
+  }
+
+  function sentenceStartIndex(before) {
+    let start = 0;
+    const re = /[.!?…]["')\]]*\s+/g;
+    let match;
+    while ((match = re.exec(before))) {
+      if (match[0][0] === "." && isSentenceAbbreviation(before.slice(0, match.index))) continue;
+      start = match.index + match[0].length;
+    }
+    const newline = before.lastIndexOf("\n");
+    if (newline !== -1 && newline + 1 > start) start = newline + 1;
+    return start;
+  }
+
+  function sentenceEndIndex(after) {
+    const re = /[.!?…]["')\]]*(?=\s|$)/g;
+    let match;
+    while ((match = re.exec(after))) {
+      if (match[0][0] === "." && isSentenceAbbreviation(after.slice(0, match.index))) continue;
+      return match.index + match[0].length;
+    }
+    const newline = after.indexOf("\n");
+    if (newline !== -1) return newline;
+    return after.length;
+  }
+
+  function collapseSpan(raw, selStart, selEnd) {
+    let out = "";
+    let start = 0;
+    let end = 0;
+    let mappedStart = false;
+    let pendingSpace = false;
+
+    for (let i = 0; i < raw.length; i++) {
+      if (/\s/.test(raw[i])) {
+        if (out.length) pendingSpace = true;
+        continue;
+      }
+      if (pendingSpace) {
+        out += " ";
+        pendingSpace = false;
+      }
+      if (!mappedStart && i >= selStart) {
+        start = out.length;
+        mappedStart = true;
+      }
+      out += raw[i];
+      if (i >= selStart && i < selEnd) end = out.length;
+    }
+
+    const leading = out.length - out.trimStart().length;
+    if (leading) {
+      out = out.slice(leading);
+      start = Math.max(0, start - leading);
+      end = Math.max(start, end - leading);
+    }
+    out = out.trimEnd();
+    if (!mappedStart) start = out.length;
+    if (end > out.length) end = out.length;
+    if (start > end) start = end;
+    return { text: out, start, end };
+  }
+
+  function meaningfulExtra(text, start, end) {
+    const outside = text.slice(0, start) + text.slice(end);
+    return outside.replace(/[^\p{L}\p{N}]+/gu, "").length;
+  }
+
+  function clipAround(text, start, end, cap) {
+    const selStart = Math.max(0, Math.min(start, text.length));
+    const selEnd = Math.max(selStart, Math.min(end, text.length));
+    if (text.length <= cap) return { text, start: selStart, end: selEnd };
+
+    const room = Math.max(0, cap - (selEnd - selStart));
+    let left = Math.max(0, selStart - Math.floor(room / 2));
+    let right = Math.min(text.length, selEnd + (room - (selStart - left)));
+    if (left === 0) right = Math.min(text.length, cap);
+    if (right === text.length) left = Math.max(0, text.length - cap);
+
+    if (left > 0) {
+      const space = text.indexOf(" ", left);
+      if (space !== -1 && space < selStart) left = space + 1;
+    }
+    if (right < text.length) {
+      const space = text.lastIndexOf(" ", right);
+      if (space > selEnd) right = space;
+    }
+
+    const slice = text.slice(left, right);
+    const lead = slice.length - slice.trimStart().length;
+    return {
+      text: slice.trim(),
+      start: selStart - left - lead,
+      end: selEnd - left - lead,
+    };
+  }
+
+  function dropPartialWord(text, edge) {
+    if (!text) return text;
+    if (edge === "start") {
+      const space = text.indexOf(" ");
+      if (space === -1) return text;
+      return text.slice(space + 1);
+    }
+    const space = text.lastIndexOf(" ");
+    if (space <= 0) return text;
+    return text.slice(0, space);
+  }
+
+  function makeVisibilityCache(root) {
+    const cache = new WeakMap();
+    const stop = root.parentElement;
+
+    function isInvisible(el) {
+      if (cache.has(el)) return cache.get(el);
+      let hidden = false;
+      if (el.hidden) {
+        hidden = true;
+      } else {
+        const style = getComputedStyle(el);
+        if (
+          style.display === "none" ||
+          style.visibility === "hidden" ||
+          style.visibility === "collapse"
+        ) {
+          hidden = true;
+        } else if (el.parentElement && el.parentElement !== stop) {
+          hidden = isInvisible(el.parentElement);
+        }
+      }
+      cache.set(el, hidden);
+      return hidden;
+    }
+
+    return isInvisible;
+  }
+
+  function isContextBlock(el) {
+    if (el.matches(CONTEXT_BLOCK_SELECTOR)) return true;
+    const display = getComputedStyle(el).display;
+    if (
+      display === "block" ||
+      display === "list-item" ||
+      display === "table-cell" ||
+      display === "flex" ||
+      display === "grid" ||
+      display === "flow-root"
+    ) {
+      return true;
+    }
+    if (display) return false;
+    return /^(?:DIV|ARTICLE|SECTION|MAIN|ASIDE|HEADER|FOOTER|UL|OL|TABLE|FIGURE|DETAILS)$/.test(
+      el.tagName,
+    );
+  }
+
+  function findContextRoot(range) {
+    const origin = range.commonAncestorContainer;
+    let current = origin.nodeType === Node.ELEMENT_NODE ? origin : origin.parentElement;
+    if (!current || (host && host.contains(current))) return null;
+
+    const semantic = current.closest(CONTEXT_BLOCK_SELECTOR);
+    if (
+      semantic &&
+      semantic !== document.body &&
+      semantic !== document.documentElement &&
+      !(host && host.contains(semantic))
+    ) {
+      return semantic;
+    }
+
+    while (
+      current &&
+      current !== document.body &&
+      current !== document.documentElement
+    ) {
+      if (host && host.contains(current)) return null;
+      if (isContextBlock(current)) return current;
+      current = current.parentElement;
+    }
+    return null;
+  }
+
+  function firstText(node, acceptNode) {
+    if (!node) return null;
+    if (node.nodeType === Node.TEXT_NODE) {
+      return acceptNode(node) === NodeFilter.FILTER_ACCEPT ? { node, offset: 0 } : null;
+    }
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, { acceptNode });
+    const found = walker.nextNode();
+    return found ? { node: found, offset: 0 } : null;
+  }
+
+  function lastTextPoint(node, acceptNode) {
+    if (!node) return null;
+    if (node.nodeType === Node.TEXT_NODE) {
+      return acceptNode(node) === NodeFilter.FILTER_ACCEPT
+        ? { node, offset: node.nodeValue.length }
+        : null;
+    }
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, { acceptNode });
+    let found = null;
+    let next;
+    while ((next = walker.nextNode())) found = next;
+    return found ? { node: found, offset: found.nodeValue.length } : null;
+  }
+
+  function pointToText(container, offset, edge, acceptNode) {
+    if (!container) return null;
+    if (container.nodeType === Node.TEXT_NODE) return { node: container, offset };
+    if (container.nodeType !== Node.ELEMENT_NODE) return null;
+
+    if (edge === "start") {
+      return firstText(container.childNodes[offset], acceptNode) || lastTextPoint(container, acceptNode);
+    }
+    if (offset <= 0) return firstText(container, acceptNode);
+    return (
+      lastTextPoint(container.childNodes[offset - 1], acceptNode) || firstText(container, acceptNode)
+    );
+  }
+
+  function boundedText(root, point, limit, direction, acceptNode) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode });
+    walker.currentNode = point.node;
+    const value = point.node.nodeValue || "";
+    let text = direction === "before" ? value.slice(0, point.offset) : value.slice(point.offset);
+    if (text.length >= limit) {
+      text = direction === "before" ? text.slice(-limit) : text.slice(0, limit);
+      return { text, hit: true };
+    }
+
+    const step = direction === "before" ? "previousNode" : "nextNode";
+    let node;
+    while ((node = walker[step]())) {
+      text = direction === "before" ? node.nodeValue + text : text + node.nodeValue;
+      if (text.length >= limit) {
+        text = direction === "before" ? text.slice(-limit) : text.slice(0, limit);
+        return { text, hit: true };
+      }
+    }
+    return { text, hit: false };
+  }
+
+  function elementText(el, limit, direction, acceptNode) {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode });
+    let text = "";
+    let node;
+    while ((node = walker.nextNode())) {
+      text += node.nodeValue;
+      if (direction === "before" && text.length > limit) text = text.slice(-limit);
+      if (direction === "after" && text.length >= limit) return text.slice(0, limit);
+    }
+    return direction === "before" && text.length > limit ? text.slice(-limit) : text;
+  }
+
+  function joinPassage(left, right) {
+    if (!left) return right;
+    if (!right) return left;
+    const end = left.replace(/\s+$/, "");
+    const start = right.replace(/^\s+/, "");
+    if (!end) return start;
+    if (!start) return end;
+    const sep = /[.!?…]["')\]]*$/.test(end) ? " " : ". ";
+    return end + sep + start;
+  }
+
+  function siblingText(root, direction, limit, acceptNode, isInvisible) {
+    const skip = /^(?:NAV|HEADER|FOOTER|ASIDE|SCRIPT|STYLE|NOSCRIPT)$/;
+    let text = "";
+    let node = direction === "before" ? root.previousElementSibling : root.nextElementSibling;
+    while (node && text.length < limit) {
+      if (host && host.contains(node)) break;
+      if (!skip.test(node.tagName) && !isInvisible(node)) {
+        const chunk = elementText(node, limit, direction, acceptNode);
+        if (chunk) text = direction === "before" ? joinPassage(chunk, text) : joinPassage(text, chunk);
+      }
+      node = direction === "before" ? node.previousElementSibling : node.nextElementSibling;
+    }
+    if (text.length > limit) {
+      text = direction === "before" ? text.slice(-limit) : text.slice(0, limit);
+    }
+    return text;
+  }
+
+  function passageFromRange(range) {
+    const root = findContextRoot(range);
+    if (!root) return "";
+
+    const isInvisible = makeVisibilityCache(root);
+    const acceptNode = (node) => {
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      const tag = parent.tagName;
+      if (tag === "SCRIPT" || tag === "STYLE" || tag === "NOSCRIPT") return NodeFilter.FILTER_REJECT;
+      if (host && host.contains(parent)) return NodeFilter.FILTER_REJECT;
+      if (isInvisible(parent)) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    };
+
+    const start = pointToText(range.startContainer, range.startOffset, "start", acceptNode);
+    const end = pointToText(range.endContainer, range.endOffset, "end", acceptNode);
+    if (!start || !end || !root.contains(start.node) || !root.contains(end.node)) return "";
+
+    let before = boundedText(root, start, CONTEXT_FETCH, "before", acceptNode);
+    let after = boundedText(root, end, CONTEXT_FETCH, "after", acceptNode);
+    if (before.hit) before = { ...before, text: dropPartialWord(before.text, "start") };
+    if (after.hit) after = { ...after, text: dropPartialWord(after.text, "end") };
+
+    const selectedRaw = range.toString();
+    const selected = selectedRaw.replace(/\s+/g, " ").trim();
+    if (!selected || selected.length > CONTEXT_SKIP_AT) return "";
+
+    const sentenceBefore = before.text.slice(sentenceStartIndex(before.text));
+    const sentenceAfter = after.text.slice(0, sentenceEndIndex(after.text));
+    const sentence = collapseSpan(
+      sentenceBefore + selectedRaw + sentenceAfter,
+      sentenceBefore.length,
+      sentenceBefore.length + selectedRaw.length,
+    );
+
+    const windowFrom = (beforeText, afterText) => {
+      const span = collapseSpan(
+        beforeText + selectedRaw + afterText,
+        beforeText.length,
+        beforeText.length + selectedRaw.length,
+      );
+      return clipAround(span.text, span.start, span.end, CONTEXT_CAP);
+    };
+
+    let chosen;
+    if (meaningfulExtra(sentence.text, sentence.start, sentence.end) >= CONTEXT_MIN_EXTRA) {
+      chosen = clipAround(sentence.text, sentence.start, sentence.end, CONTEXT_CAP);
+    } else if (selected.length >= CONTEXT_WIDEN_BELOW) {
+      return "";
+    } else {
+      chosen = windowFrom(before.text, after.text);
+      if (meaningfulExtra(chosen.text, chosen.start, chosen.end) < CONTEXT_MIN_EXTRA) {
+        const lead = siblingText(root, "before", CONTEXT_FETCH, acceptNode, isInvisible);
+        const tail = siblingText(root, "after", CONTEXT_FETCH, acceptNode, isInvisible);
+        let beforeText = lead ? joinPassage(lead, before.text) : before.text;
+        let afterText = tail ? joinPassage(after.text, tail) : after.text;
+        // The highlight sits between these strings, so an empty side still needs a seam.
+        if (lead && !before.text.trim()) {
+          beforeText = /[.!?…]["')\]]*$/.test(lead.trim()) ? `${lead.trim()} ` : `${lead.trim()}. `;
+        }
+        if (tail && !after.text.trim()) {
+          afterText = /[.!?…]["')\]]*$/.test(selectedRaw.trim())
+            ? ` ${tail.trim()}`
+            : `. ${tail.trim()}`;
+        }
+        chosen = windowFrom(beforeText, afterText);
+      }
+    }
+
+    if (meaningfulExtra(chosen.text, chosen.start, chosen.end) < 1) return "";
+    return chosen.text;
+  }
+
+  function surroundingPassage(range) {
+    try {
+      return passageFromRange(range);
+    } catch {
+      return "";
+    }
+  }
+
   function readSelection() {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed) {
@@ -1266,11 +1649,20 @@
     const holes = clientRects.filter((box) => box.width && box.height);
     if (!holes.length) holes.push(rect);
 
-    return { text, rect, first, line, range, holes };
+    return {
+      text,
+      rect,
+      first,
+      line,
+      range,
+      holes,
+      context: text.length > CONTEXT_SKIP_AT ? "" : surroundingPassage(range),
+    };
   }
 
   function storeCapture(captured) {
     lastText = captured.text;
+    lastContext = captured.context || "";
     lastRect = captured.rect;
     lastHoles = captured.holes?.length ? captured.holes : [captured.rect];
     lastRange = captured.range ? captured.range.cloneRange() : lastRange;
