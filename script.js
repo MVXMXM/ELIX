@@ -26,6 +26,7 @@
   function openOverlay() {
     overlayOpen = true;
     scrim.hidden = false;
+    scrim.classList.add("open");
     veil.innerHTML = "";
     const { left, top, right, bottom } = selectionRect;
     [
@@ -43,18 +44,40 @@
       veil.appendChild(piece);
     });
     promptBar.hidden = false;
-    position(promptBar, selectionRect);
+    promptBar.classList.add("open");
+    positionOverlay();
   }
 
   function closeOverlay() {
     overlayOpen = false;
-    scrim.hidden = true;
-    promptBar.hidden = true;
-    output.hidden = true;
+    scrim.classList.remove("open");
+    promptBar.classList.remove("open");
+    output.classList.remove("open");
+    window.setTimeout(() => {
+      if (overlayOpen) return;
+      scrim.hidden = true;
+      promptBar.hidden = true;
+      output.hidden = true;
+    }, 220);
     hideTip();
     selectedText = "";
     selectionRect = null;
     window.getSelection()?.removeAllRanges();
+  }
+
+  function positionOverlay() {
+    const gap = 14;
+    const barWidth = promptBar.offsetWidth;
+    const barHeight = promptBar.offsetHeight;
+    const maxBarTop = Math.max(8, window.innerHeight - barHeight - 8);
+    const barTop = Math.min(Math.max(8, selectionRect.bottom + gap), maxBarTop);
+    const maxLeft = Math.max(8, window.innerWidth - barWidth - 8);
+    const barLeft = Math.min(Math.max(8, selectionRect.left), maxLeft);
+    promptBar.style.top = `${Math.round(barTop)}px`;
+    promptBar.style.left = `${Math.round(barLeft)}px`;
+    output.style.top = `${Math.round(barTop + barHeight + gap)}px`;
+    output.style.left = `${Math.round(barLeft)}px`;
+    output.style.maxHeight = `${Math.max(80, window.innerHeight - barTop - barHeight - gap - 8)}px`;
   }
 
   function readSelection() {
@@ -86,8 +109,8 @@
     output.hidden = false;
     status.hidden = false;
     result.textContent = "";
-    position(promptBar, selectionRect);
-    position(output, selectionRect, 48);
+    output.classList.add("open");
+    positionOverlay();
     try {
       const response = await fetch("/api/explain", {
         method: "POST",
@@ -124,5 +147,8 @@
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && overlayOpen) closeOverlay();
+  });
+  window.addEventListener("resize", () => {
+    if (overlayOpen && selectionRect) positionOverlay();
   });
 })();
