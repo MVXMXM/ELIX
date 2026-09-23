@@ -9,6 +9,7 @@
   const result = output.querySelector(".result");
   let selectedText = "";
   let selectionRect = null;
+  let overlayOpen = false;
 
   function position(element, rect, gap = 8) {
     element.hidden = false;
@@ -23,6 +24,7 @@
   }
 
   function openOverlay() {
+    overlayOpen = true;
     scrim.hidden = false;
     veil.innerHTML = "";
     const { left, top, right, bottom } = selectionRect;
@@ -45,9 +47,14 @@
   }
 
   function closeOverlay() {
+    overlayOpen = false;
     scrim.hidden = true;
     promptBar.hidden = true;
     output.hidden = true;
+    hideTip();
+    selectedText = "";
+    selectionRect = null;
+    window.getSelection()?.removeAllRanges();
   }
 
   function readSelection() {
@@ -62,7 +69,7 @@
   }
 
   function showTip() {
-    if (!promptBar.hidden) return;
+    if (overlayOpen || !promptBar.hidden) return;
     const captured = readSelection();
     if (!captured) {
       hideTip();
@@ -113,9 +120,9 @@
     }
   });
   document.addEventListener("selectionchange", () => {
-    if (promptBar.hidden) window.setTimeout(showTip, 0);
+    if (!overlayOpen && promptBar.hidden) window.setTimeout(showTip, 0);
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !scrim.hidden) closeOverlay();
+    if (event.key === "Escape" && overlayOpen) closeOverlay();
   });
 })();
