@@ -3,6 +3,9 @@
   const tip = document.querySelector(".tip");
   const promptBar = document.querySelector(".prompt-bar");
   const output = document.querySelector(".output");
+  const scrim = document.querySelector(".scrim");
+  const veil = scrim.querySelector(".veil");
+  const selectionMark = scrim.querySelector(".selection-mark");
   const status = output.querySelector(".status");
   const result = output.querySelector(".result");
   let selectedText = "";
@@ -18,6 +21,22 @@
 
   function hideTip() {
     tip.hidden = true;
+  }
+
+  function openOverlay() {
+    scrim.hidden = false;
+    selectionMark.style.left = `${selectionRect.left}px`;
+    selectionMark.style.top = `${selectionRect.top}px`;
+    selectionMark.style.width = `${selectionRect.width}px`;
+    selectionMark.style.height = `${selectionRect.height}px`;
+    promptBar.hidden = false;
+    position(promptBar, selectionRect);
+  }
+
+  function closeOverlay() {
+    scrim.hidden = true;
+    promptBar.hidden = true;
+    output.hidden = true;
   }
 
   function readSelection() {
@@ -50,6 +69,7 @@
     status.hidden = false;
     result.textContent = "";
     position(promptBar, selectionRect);
+    position(output, selectionRect, 48);
     try {
       const response = await fetch("/api/explain", {
         method: "POST",
@@ -69,9 +89,9 @@
   tip.addEventListener("mousedown", (event) => event.preventDefault());
   tip.addEventListener("click", () => {
     hideTip();
-    promptBar.hidden = false;
-    position(promptBar, selectionRect);
+    openOverlay();
   });
+  veil.addEventListener("click", closeOverlay);
   promptBar.addEventListener("click", (event) => {
     const button = event.target.closest("[data-level]");
     if (button) explain(button.dataset.level);
@@ -83,5 +103,8 @@
   });
   document.addEventListener("selectionchange", () => {
     if (promptBar.hidden) window.setTimeout(showTip, 0);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !scrim.hidden) closeOverlay();
   });
 })();

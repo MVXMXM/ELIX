@@ -75,7 +75,27 @@ h1 {
 .prompt-bar,
 .output {
   position: fixed;
+  z-index: 3;
+}
+
+.scrim {
+  position: fixed;
   z-index: 2;
+  inset: 0;
+}
+
+.veil {
+  position: absolute;
+  inset: 0;
+  background: rgb(255 255 255 / 58%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.selection-mark {
+  position: absolute;
+  background: rgb(232 196 104 / 50%);
+  box-shadow: 0 0 0 2px rgb(232 196 104 / 22%);
 }
 
 .tip {
@@ -139,7 +159,6 @@ h1 {
 
 .output {
   max-width: min(420px, calc(100vw - 24px));
-  margin-top: 52px;
   padding: 0;
 }
 
