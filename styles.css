@@ -27,15 +27,8 @@ main {
   padding: 52px 0 64px;
 }
 
-.wordmark {
-  margin: 0;
-  color: var(--muted);
-  font: 600 12px/1 Arial, sans-serif;
-  letter-spacing: 0.2em;
-}
-
 h1 {
-  max-width: 12ch;
+  max-width: 6ch;
   margin: auto 0 24px;
   font-size: clamp(3.5rem, 10vw, 6.25rem);
   font-weight: 400;
