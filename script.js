@@ -5,7 +5,6 @@
   const output = document.querySelector(".output");
   const scrim = document.querySelector(".scrim");
   const veil = scrim.querySelector(".veil");
-  const selectionMark = scrim.querySelector(".selection-mark");
   const status = output.querySelector(".status");
   const result = output.querySelector(".result");
   let selectedText = "";
@@ -25,10 +24,22 @@
 
   function openOverlay() {
     scrim.hidden = false;
-    selectionMark.style.left = `${selectionRect.left}px`;
-    selectionMark.style.top = `${selectionRect.top}px`;
-    selectionMark.style.width = `${selectionRect.width}px`;
-    selectionMark.style.height = `${selectionRect.height}px`;
+    veil.innerHTML = "";
+    const { left, top, right, bottom } = selectionRect;
+    [
+      ["top", 0, 0, window.innerWidth, top],
+      ["right", top, right, window.innerWidth, bottom],
+      ["bottom", bottom, 0, window.innerWidth, window.innerHeight],
+      ["left", top, 0, left, bottom],
+    ].forEach(([side, y, x, width, height]) => {
+      const piece = document.createElement("div");
+      piece.className = `veil-piece ${side}`;
+      piece.style.left = `${x}px`;
+      piece.style.top = `${y}px`;
+      piece.style.width = `${Math.max(0, width - x)}px`;
+      piece.style.height = `${Math.max(0, height - y)}px`;
+      veil.appendChild(piece);
+    });
     promptBar.hidden = false;
     position(promptBar, selectionRect);
   }

@@ -87,15 +87,14 @@ h1 {
 .veil {
   position: absolute;
   inset: 0;
+  pointer-events: auto;
+}
+
+.veil-piece {
+  position: absolute;
   background: rgb(255 255 255 / 58%);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-}
-
-.selection-mark {
-  position: absolute;
-  background: rgb(232 196 104 / 50%);
-  box-shadow: 0 0 0 2px rgb(232 196 104 / 22%);
 }
 
 .tip {
