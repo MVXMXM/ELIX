@@ -20,16 +20,18 @@ body {
 main {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
   width: min(100% - 48px, 680px);
   min-height: 100vh;
   margin: 0 auto;
   padding: 52px 0 64px;
+  text-align: center;
 }
 
 h1 {
   max-width: 6ch;
-  margin: auto 0 24px;
+  margin: 0 0 24px;
   font-size: clamp(3.5rem, 10vw, 6.25rem);
   font-weight: 400;
   letter-spacing: -0.055em;
