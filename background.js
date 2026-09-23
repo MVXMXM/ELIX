@@ -9,11 +9,21 @@ async function getSettings() {
   return { ...DEFAULTS, ...stored };
 }
 
-function buildPrompt(text, level, freeform) {
+function cleanPassage(context, text) {
+  const clean = (context || "").replace(/\s+/g, " ").trim();
+  const highlight = (text || "").replace(/\s+/g, " ").trim();
+  if (!clean || clean === highlight) return "";
+  if (clean.length <= 400) return clean;
+  return clean.slice(0, 400).trim();
+}
+
+function buildPrompt(text, level, freeform, context) {
+  const passage = cleanPassage(context, text);
   const persona = freeform?.trim();
+  const lines = [];
 
   if (persona) {
-    return [
+    lines.push(
       "You are ELIX. Define the highlighted text fully as this persona:",
       persona,
       "Commit. Take their language, nationality, species, job, era, or medium as the actual output, not as flavor sprinkled on English.",
@@ -24,38 +34,46 @@ function buildPrompt(text, level, freeform) {
       "Do not repeat or quote the highlighted wording.",
       "One prominent sense only. Plain text. No markdown, headings, lists, or labels.",
       "Write only the in-persona definition.",
-      "",
-      "Highlighted text:",
-      text,
-    ].join("\n");
+    );
+  } else {
+    const childReader = Number(level) <= 10;
+    const voice = childReader
+      ? [
+          "Voice: a children's dictionary for that age. Simple, concrete, kind.",
+          "Keep the kid-friendly clarity of a picture-glossary: short words, familiar things, no baby talk and no lecture.",
+          "Still a definition, not a story, chat, or pep talk.",
+        ]
+      : [
+          "Voice: lexical, succinct, academic. Declarative sentences only.",
+          "Scale the concepts and vocabulary to that reader's mental model.",
+        ];
+
+    lines.push(
+      "You are ELIX. Write a dictionary gloss of the highlighted text.",
+      `Reader: a ${level}-year-old.`,
+      ...voice,
+      "Do not address the reader. No questions, asides, prefaces, or chatty framing.",
+      "Do not use phrases such as \"imagine\", \"basically\", \"this means\", or \"in simple terms\".",
+      "Do not repeat, quote, or italicize the highlighted wording; the reader can already see it.",
+      "Give only the single most prominent sense. Never list alternate meanings or numbered senses.",
+      "One or two sentences of plain text. No markdown, headings, lists, or labels.",
+      "Write only the definition.",
+    );
   }
 
-  const childReader = Number(level) <= 10;
-  const voice = childReader
-    ? [
-        "Voice: a children's dictionary for that age. Simple, concrete, kind.",
-        "Keep the kid-friendly clarity of a picture-glossary: short words, familiar things, no baby talk and no lecture.",
-        "Still a definition, not a story, chat, or pep talk.",
-      ]
-    : [
-        "Voice: lexical, succinct, academic. Declarative sentences only.",
-        "Scale the concepts and vocabulary to that reader's mental model.",
-      ];
+  if (passage) {
+    lines.push(
+      "A surrounding passage is included only so you can tell which sense is meant here. Define the highlighted text, not the passage.",
+    );
+  }
 
-  return [
-    "You are ELIX. Write a dictionary gloss of the highlighted text.",
-    `Reader: a ${level}-year-old.`,
-    ...voice,
-    "Do not address the reader. No questions, asides, prefaces, or chatty framing.",
-    "Do not use phrases such as \"imagine\", \"basically\", \"this means\", or \"in simple terms\".",
-    "Do not repeat, quote, or italicize the highlighted wording; the reader can already see it.",
-    "Give only the single most prominent sense. Never list alternate meanings or numbered senses.",
-    "One or two sentences of plain text. No markdown, headings, lists, or labels.",
-    "Write only the definition.",
-    "",
-    "Highlighted text:",
-    text,
-  ].join("\n");
+  lines.push("", "Highlighted text:", text);
+
+  if (passage) {
+    lines.push("", "Surrounding passage:", passage);
+  }
+
+  return lines.join("\n");
 }
 
 async function* readSse(response) {
@@ -99,7 +117,7 @@ async function* readSse(response) {
   }
 }
 
-async function explainTextStream({ text, level, freeform }, signal, onChunk) {
+async function explainTextStream({ text, level, freeform, context }, signal, onChunk) {
   const settings = await getSettings();
 
   if (!settings.apiKey) {
@@ -125,7 +143,7 @@ async function explainTextStream({ text, level, freeform }, signal, onChunk) {
       messages: [
         {
           role: "user",
-          content: buildPrompt(text.trim(), level, freeform?.trim()),
+          content: buildPrompt(text.trim(), level, freeform?.trim(), context),
         },
       ],
     }),
