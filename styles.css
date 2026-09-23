@@ -41,7 +41,7 @@ h1 {
 .intro {
   max-width: 29ch;
   margin: 0 0 32px;
-  color: var(--muted);
+  color: var(--ink);
   font-size: clamp(1.35rem, 2.8vw, 1.7rem);
   letter-spacing: -0.02em;
   line-height: 1.25;
