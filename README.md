@@ -29,6 +29,7 @@ The chip only appears when the page exposes a normal HTML selection (`window.get
 - **PDFs.** Chrome shows these in its built-in viewer, an internal extension page. ELIX's content script is not injected there, so a highlight never produces a chip. That includes local `file://` files.
 - **Google Docs.** The script does load on `docs.google.com`, but the document is drawn on a canvas and the selection belongs to Docs. The page selection stays empty, and the editor's text target sits in an iframe this script does not enter.
 - **Other iframes.** The content script runs in the top frame only. A highlight inside an embedded frame is not visible to it.
+- **Code blocks.** A `<pre>` / `<code>` block scrolls on its own. Highlighting text scrolls that box, and the content script treats every scroll as the page moving, so it clears the chip before the chip can appear.
 
 ## Notes
 
