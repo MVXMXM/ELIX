@@ -26,8 +26,9 @@ function buildPrompt(text, level, freeform, context) {
     lines.push(
       "You are ELIX. Define the highlighted text fully as this persona:",
       persona,
-      "Commit. Take their language, nationality, species, job, era, or medium as the actual output, not as flavor sprinkled on English.",
-      "If a language or nationality is named, write the entire definition in that language.",
+      "Use English by default. Switch languages only when the persona explicitly names a language or gives a clear, unambiguous nationality that indicates one.",
+      "If the nationality could indicate multiple languages, stay in English. Do not infer a language from a job, name, setting, species, era, or other incidental detail.",
+      "Let the persona's traits shape the voice and form of the definition rather than merely flavoring English.",
       "If an animal or nonhuman is named, write in their voice (meows, barks, chirps, beeps) so a human can still recover the meaning.",
       "Bend tone, vocabulary, and form as far as the persona requires. Be willing to be strange, comic, or lyrical.",
       "Do not add a translation, stage direction, or note about what you are doing.",
