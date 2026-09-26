@@ -22,6 +22,18 @@ Working Manifest V3 BYOK prototype.
 3. Service worker calls OpenAI Chat Completions with your stored key
 4. Explanation is returned into the overlay
 
+## Landing page preview
+
+The landing page also includes a limited highlight-to-explain preview. Run it
+with a server-side key so the key is never sent to the browser:
+
+```sh
+OPENAI_API_KEY=your-key node server.js
+```
+
+Then open `http://localhost:4173`, highlight text in the page, and click
+**Explain selection**. The preview accepts up to 280 selected characters.
+
 ## Known limitations
 
 The chip only appears when the page exposes a normal HTML selection (`window.getSelection()` and a DOM range).
