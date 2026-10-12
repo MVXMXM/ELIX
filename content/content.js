@@ -40,7 +40,12 @@
   let pinningScroll = false;
   let savedScrollX = 0;
   let savedScrollY = 0;
-  let previousOverflow = { html: "", body: "" };
+  let previousScrollLockStyles = {
+    htmlOverflow: "",
+    bodyOverflow: "",
+    htmlScrollbarGutter: "",
+    bodyPaddingInlineEnd: "",
+  };
   let explainPort = null;
   let overlayFadeTimer = null;
   let explainDefaults = { defaultLevel: DEFAULT_LEVEL, defaultFreeform: "" };
@@ -164,6 +169,14 @@
     }
   }
 
+  function getRootScrollbarWidth() {
+    return Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+  }
+
+  function supportsStableScrollbarGutter() {
+    return typeof CSS !== "undefined" && CSS.supports?.("scrollbar-gutter: stable");
+  }
+
   function lockScroll() {
     if (scrollLocked) {
       return;
@@ -172,13 +185,32 @@
     scrollLocked = true;
     savedScrollX = window.scrollX;
     savedScrollY = window.scrollY;
-    previousOverflow = {
-      html: document.documentElement.style.overflow,
-      body: document.body.style.overflow,
+    const rootClientWidth = document.documentElement.clientWidth;
+    const scrollbarWidth = getRootScrollbarWidth();
+    const canReserveScrollbarGutter = supportsStableScrollbarGutter();
+    previousScrollLockStyles = {
+      htmlOverflow: document.documentElement.style.overflow,
+      bodyOverflow: document.body.style.overflow,
+      htmlScrollbarGutter: document.documentElement.style.scrollbarGutter,
+      bodyPaddingInlineEnd: document.body.style.paddingInlineEnd,
     };
 
+    if (
+      scrollbarWidth > 0 &&
+      canReserveScrollbarGutter &&
+      !/\bstable\b/.test(previousScrollLockStyles.htmlScrollbarGutter)
+    ) {
+      document.documentElement.style.scrollbarGutter = "stable";
+    }
     document.documentElement.style.overflow = "hidden";
     document.body.style.overflow = "hidden";
+
+    const layoutExpansion = document.documentElement.clientWidth - rootClientWidth;
+    if (scrollbarWidth > 0 && !canReserveScrollbarGutter && layoutExpansion > 0) {
+      const padding = getComputedStyle(document.body).paddingInlineEnd;
+      document.body.style.paddingInlineEnd = `calc(${padding} + ${layoutExpansion}px)`;
+    }
+
     document.addEventListener("wheel", preventPageScroll, { passive: false });
     document.addEventListener("touchmove", preventPageScroll, { passive: false });
   }
@@ -189,8 +221,11 @@
     }
 
     scrollLocked = false;
-    document.documentElement.style.overflow = previousOverflow.html;
-    document.body.style.overflow = previousOverflow.body;
+    document.documentElement.style.overflow = previousScrollLockStyles.htmlOverflow;
+    document.body.style.overflow = previousScrollLockStyles.bodyOverflow;
+    document.documentElement.style.scrollbarGutter =
+      previousScrollLockStyles.htmlScrollbarGutter;
+    document.body.style.paddingInlineEnd = previousScrollLockStyles.bodyPaddingInlineEnd;
     document.removeEventListener("wheel", preventPageScroll);
     document.removeEventListener("touchmove", preventPageScroll);
     window.scrollTo(savedScrollX, savedScrollY);
