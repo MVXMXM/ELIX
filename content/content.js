@@ -28,6 +28,12 @@
   let focusCatcher = null;
   let tip = null;
   let lastText = "";
+  let lastImage = "";
+  let mediaTarget = null;
+  let mediaHideTimer = null;
+  let captureSession = null;
+  let captureLayer = null;
+  let capturePreview = null;
   let lastContext = "";
   let lastRect = null;
   let lastHoles = [];
@@ -551,7 +557,8 @@
     tip.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      openOverlay();
+      if (mediaTarget) startMediaCapture();
+      else openOverlay();
     });
 
     document.documentElement.appendChild(host);
@@ -721,8 +728,8 @@
       return;
     }
 
-    if (!lastText.trim()) {
-      showError("No text captured from the selection.");
+    if (!lastText.trim() && !lastImage) {
+      showError("No text or image captured from the selection.");
       return;
     }
 
@@ -783,7 +790,7 @@
 
     port.postMessage({
       type: "ELIX_EXPLAIN",
-      payload: { text: lastText, context: lastContext, level, freeform },
+      payload: { text: lastText, imageDataUrl: lastImage || undefined, context: lastContext, level, freeform },
     });
   }
 
@@ -977,6 +984,9 @@
       lastHoles = [];
       lastRange = null;
       lastText = "";
+      lastImage = "";
+      capturePreview?.remove();
+      capturePreview = null;
       lastContext = "";
       if (marks) marks.replaceChildren();
       cancelScheduledTip();
@@ -1695,7 +1705,192 @@
     };
   }
 
+  function cancelMediaCapture() {
+    captureSession = null;
+    captureLayer?.remove();
+    captureLayer = null;
+    unlockScroll();
+  }
+
+  function mediaRectAt(event) {
+    // Player controls often sit above the video rather than inside it.
+    const candidates = document.elementsFromPoint(event.clientX, event.clientY);
+    for (const element of candidates) {
+      if (element.matches("img, video, canvas")) return element;
+      const video = element.querySelector("video");
+      if (video) {
+        const rect = video.getBoundingClientRect();
+        if (event.clientX >= rect.left && event.clientX <= rect.right &&
+            event.clientY >= rect.top && event.clientY <= rect.bottom) return video;
+      }
+    }
+    return null;
+  }
+
+  document.addEventListener("pointerdown", event => {
+    if (isEventFromUi(event) || captureSession || isOverlayOpen()) return;
+    clearTimeout(mediaHideTimer);
+    mediaTarget = null;
+    hideTip();
+  }, true);
+
+  document.addEventListener("pointermove", (event) => {
+    if (isOverlayOpen() || captureSession || event.buttons) return;
+    if (isEventFromUi(event)) {
+      clearTimeout(mediaHideTimer);
+      return;
+    }
+    if (window.getSelection()?.toString().trim()) return;
+    const target = mediaRectAt(event);
+    const rect = target?.getBoundingClientRect();
+    if (!rect || rect.width < 80 || rect.height < 60) {
+      if (mediaTarget) {
+        clearTimeout(mediaHideTimer);
+        mediaHideTimer = setTimeout(() => { mediaTarget = null; hideTip(); }, 180);
+      }
+      return;
+    }
+    clearTimeout(mediaHideTimer);
+    cancelScheduledTip();
+    ensureUi();
+    mediaTarget = target;
+    tip.style.left = `${Math.max(VIEW_MARGIN, Math.min(window.innerWidth - tipSize.width - VIEW_MARGIN, rect.right - tipSize.width - 8))}px`;
+    tip.style.top = `${Math.max(VIEW_MARGIN, Math.min(window.innerHeight - tipSize.height - VIEW_MARGIN, rect.top + 8))}px`;
+    tip.classList.remove("hidden");
+  }, { passive: true });
+
+  async function startMediaCapture() {
+    if (captureSession || !mediaTarget) return;
+    const target = mediaTarget;
+    const session = { width: window.innerWidth, height: window.innerHeight };
+    captureSession = session;
+    mediaTarget = null;
+    clearTimeout(mediaHideTimer);
+    cancelScheduledTip();
+    hideTip();
+    lastText = "";
+    lastImage = "";
+    lastRange = null;
+    lastContext = [target.getAttribute("alt"), target.closest("figure")?.querySelector("figcaption")?.textContent]
+      .filter(Boolean).join(" ").slice(0, CONTEXT_CAP);
+    lastRect = boxFromRect(target.getBoundingClientRect());
+    lastHoles = [lastRect];
+    try {
+      // Let the hidden button paint before Chrome takes the screenshot.
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      if (captureSession !== session) return;
+      const response = await chrome.runtime.sendMessage({ type: "ELIX_CAPTURE" });
+      if (captureSession !== session) return;
+      if (response?.error || !response?.dataUrl) throw new Error(response?.error || "Could not capture this page.");
+      const image = new Image();
+      image.src = response.dataUrl;
+      await image.decode();
+      if (captureSession !== session) return;
+      if (window.innerWidth !== session.width || window.innerHeight !== session.height) {
+        throw new Error("The window changed size. Please capture again.");
+      }
+      lockScroll();
+      captureLayer = document.createElement("div");
+      captureLayer.setAttribute("role", "dialog");
+      captureLayer.setAttribute("aria-label", "Select an image region");
+      captureLayer.tabIndex = -1;
+      captureLayer.style.cssText = "position:fixed;inset:0;z-index:10;cursor:crosshair;touch-action:none;user-select:none;overflow:hidden;";
+      image.draggable = false;
+      image.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;";
+      const shade = document.createElement("div");
+      shade.style.cssText = "position:absolute;inset:0;background:rgba(0,0,0,.3);pointer-events:none;";
+      const box = document.createElement("div");
+      box.className = "mark";
+      box.style.cssText = "position:absolute;display:none;border:2px solid white;outline:1px solid #222;box-shadow:0 0 0 99999px rgba(0,0,0,.3);pointer-events:none;";
+      captureLayer.append(image, shade, box);
+      shadow.append(captureLayer);
+      captureLayer.addEventListener("keydown", event => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          cancelMediaCapture();
+        }
+      });
+      captureLayer.focus({ preventScroll: true });
+      let start = null;
+      let rect = null;
+      const point = event => ({ x: Math.max(0, Math.min(session.width, event.clientX)), y: Math.max(0, Math.min(session.height, event.clientY)) });
+      const update = event => {
+        const end = point(event);
+        const left = Math.min(start.x, end.x);
+        const top = Math.min(start.y, end.y);
+        rect = { left, top, right: Math.max(start.x, end.x), bottom: Math.max(start.y, end.y), width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y) };
+        Object.assign(box.style, { display: "block", left: `${left}px`, top: `${top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+      };
+      captureLayer.addEventListener("pointerdown", event => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        start = point(event);
+        captureLayer.setPointerCapture(event.pointerId);
+        shade.style.display = "none";
+        update(event);
+      });
+      captureLayer.addEventListener("pointermove", event => {
+        if (start) update(event);
+      });
+      captureLayer.addEventListener("pointercancel", cancelMediaCapture);
+      captureLayer.addEventListener("pointerup", event => {
+        if (!start || event.button !== 0) return;
+        update(event);
+        start = null;
+        if (rect.width < 8 || rect.height < 8) {
+          box.style.display = "none";
+          shade.style.display = "block";
+          return;
+        }
+        try {
+          // Use actual bitmap dimensions: zoom and display scale need not equal devicePixelRatio.
+          const scaleX = image.naturalWidth / session.width;
+          const scaleY = image.naturalHeight / session.height;
+          const sourceWidth = rect.width * scaleX;
+          const sourceHeight = rect.height * scaleY;
+          const scale = Math.min(1, 2048 / Math.max(sourceWidth, sourceHeight));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+          canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+          canvas.getContext("2d").drawImage(image, rect.left * scaleX, rect.top * scaleY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
+          lastImage = canvas.toDataURL("image/png");
+          lastRect = rect;
+          lastHoles = [rect];
+          capturePreview = document.createElement("img");
+          capturePreview.src = lastImage;
+          capturePreview.alt = "Captured region";
+          capturePreview.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;pointer-events:none;`;
+          cancelMediaCapture();
+          scrim.insertBefore(capturePreview, marks);
+          openOverlay(true);
+        } catch (error) {
+          cancelMediaCapture();
+          openOverlay(true);
+          showError(error.message || "Could not crop this region.");
+        }
+      });
+    } catch (error) {
+      if (captureSession !== session) return;
+      cancelMediaCapture();
+      // Reuse the result panel for capture errors; do not send a model request.
+      lastText = "";
+      lastImage = "";
+      ensureUi();
+      updateSpotlight();
+      focusCatcher.classList.remove("hidden");
+      fadeOpen(scrim);
+      fadeOpen(promptBar);
+      lockScroll();
+      positionOverlay(lastRect);
+      showError(error.message || "Could not capture this page.");
+    }
+  }
+
   function storeCapture(captured) {
+    mediaTarget = null;
+    lastImage = "";
     lastText = captured.text;
     lastContext = captured.context || "";
     lastRect = captured.rect;
@@ -1716,7 +1911,7 @@
   }
 
   function showTipForSelection() {
-    if (isOverlayOpen()) return;
+    if (isOverlayOpen() || captureSession) return;
 
     const captured = readSelection();
     if (!captured) {
@@ -1747,22 +1942,22 @@
   }
 
   function scheduleTip() {
-    if (isOverlayOpen()) return;
+    if (isOverlayOpen() || captureSession || mediaTarget) return;
     cancelScheduledTip();
     hideTip();
     showTimer = setTimeout(showTipForSelection, 16);
   }
 
-  function openOverlay() {
+  function openOverlay(imageCapture = false) {
     cancelScheduledTip();
     hideTip();
 
-    const captured = readSelection();
+    const captured = imageCapture ? null : readSelection();
     if (captured) {
       storeCapture(captured);
     }
 
-    if (!lastText?.trim() || !lastRect) {
+    if ((!lastText?.trim() && !lastImage) || !lastRect) {
       return;
     }
 
@@ -1807,7 +2002,7 @@
   });
 
   document.addEventListener("selectionchange", () => {
-    if (isOverlayOpen()) return;
+    if (isOverlayOpen() || captureSession || mediaTarget) return;
 
     const selection = window.getSelection();
     const text = selection?.toString().trim() || "";
@@ -1825,6 +2020,11 @@
   window.addEventListener(
     "scroll",
     () => {
+      if (captureSession) {
+        cancelMediaCapture();
+        return;
+      }
+      mediaTarget = null;
       if (isOverlayOpen()) {
         pinScroll();
         syncOverlayToSelection();
@@ -1837,6 +2037,8 @@
   );
 
   window.addEventListener("resize", () => {
+    if (captureSession) cancelMediaCapture();
+    mediaTarget = null;
     if (isOverlayOpen() && lastRect) {
       pinScroll();
       syncOverlayToSelection();
@@ -1851,6 +2053,12 @@
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
 
+    if (captureSession) {
+      event.preventDefault();
+      cancelMediaCapture();
+      return;
+    }
+
     if (isOverlayOpen()) {
       event.preventDefault();
       hideOverlay();
@@ -1861,6 +2069,7 @@
       event.preventDefault();
       cancelScheduledTip();
       hideTip();
+      mediaTarget = null;
     }
   });
 
