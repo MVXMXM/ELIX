@@ -29,6 +29,7 @@
   let tip = null;
   let lastText = "";
   let lastImage = "";
+  let mediaEnabled = false;
   let mediaTarget = null;
   let mediaHideTimer = null;
   let captureSession = null;
@@ -817,11 +818,13 @@
         defaultLevel: DEFAULT_LEVEL,
         defaultFreeform: "",
         apiKey: "",
+        mediaEnabled: false,
       });
       explainDefaults = {
         defaultLevel: normalizeLevel(stored.defaultLevel),
         defaultFreeform: String(stored.defaultFreeform || ""),
       };
+      setMediaEnabled(stored.mediaEnabled);
       hasApiKey = Boolean(String(stored.apiKey || "").trim());
     } catch {
       // Keep the in-memory default if extension storage is unavailable.
@@ -1705,6 +1708,16 @@
     };
   }
 
+  function setMediaEnabled(value) {
+    mediaEnabled = value === true;
+    if (mediaEnabled) return;
+    clearTimeout(mediaHideTimer);
+    if (mediaTarget) hideTip();
+    mediaTarget = null;
+    if (captureSession) cancelMediaCapture();
+    if (lastImage && isOverlayOpen()) hideOverlay();
+  }
+
   function cancelMediaCapture() {
     captureSession = null;
     captureLayer?.remove();
@@ -1728,14 +1741,14 @@
   }
 
   document.addEventListener("pointerdown", event => {
-    if (isEventFromUi(event) || captureSession || isOverlayOpen()) return;
+    if (!mediaEnabled || isEventFromUi(event) || captureSession || isOverlayOpen()) return;
     clearTimeout(mediaHideTimer);
     mediaTarget = null;
     hideTip();
   }, true);
 
   document.addEventListener("pointermove", (event) => {
-    if (isOverlayOpen() || captureSession || event.buttons) return;
+    if (!mediaEnabled || isOverlayOpen() || captureSession || event.buttons) return;
     if (isEventFromUi(event)) {
       clearTimeout(mediaHideTimer);
       return;
@@ -1760,7 +1773,7 @@
   }, { passive: true });
 
   async function startMediaCapture() {
-    if (captureSession || !mediaTarget) return;
+    if (!mediaEnabled || captureSession || !mediaTarget) return;
     const target = mediaTarget;
     const session = { width: window.innerWidth, height: window.innerHeight };
     captureSession = session;
@@ -2080,6 +2093,9 @@
   refreshExplainDefaults();
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "sync") return;
+    if (changes.mediaEnabled) {
+      setMediaEnabled(changes.mediaEnabled.newValue);
+    }
     if (changes.defaultLevel) {
       explainDefaults.defaultLevel = normalizeLevel(changes.defaultLevel.newValue);
     }

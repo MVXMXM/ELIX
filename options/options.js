@@ -4,6 +4,7 @@ const DEFAULTS = {
   baseUrl: "https://api.openai.com/v1",
   defaultLevel: "5",
   defaultFreeform: "",
+  mediaEnabled: false,
 };
 
 const LEVELS = ["5", "10", "15", "20", "other"];
@@ -25,6 +26,7 @@ function syncFreeformVisibility() {
 
 async function loadSettings() {
   const settings = await chrome.storage.sync.get(DEFAULTS);
+  form.mediaEnabled.checked = settings.mediaEnabled === true;
   form.apiKey.value = settings.apiKey || "";
   form.model.value = settings.model || DEFAULTS.model;
   form.baseUrl.value = settings.baseUrl || DEFAULTS.baseUrl;
@@ -61,6 +63,7 @@ form.addEventListener("submit", async (event) => {
 
   await chrome.storage.sync.set({
     apiKey,
+    mediaEnabled: form.mediaEnabled.checked,
     model,
     baseUrl,
     defaultLevel,
