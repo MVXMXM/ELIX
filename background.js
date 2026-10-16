@@ -1,5 +1,6 @@
 const DEFAULTS = {
   apiKey: "",
+  mediaEnabled: false,
   model: "gpt-4o-mini",
   baseUrl: "https://api.openai.com/v1",
 };
@@ -135,6 +136,10 @@ function buildImagePrompt(level, freeform, context) {
 async function explainTextStream({ text, imageDataUrl, level, freeform, context }, signal, onChunk) {
   const settings = await getSettings();
 
+  if (imageDataUrl && settings.mediaEnabled !== true) {
+    throw new Error("Enable image and video capture in ELIX options first.");
+  }
+
   if (!settings.apiKey) {
     throw new Error("Add your OpenAI API key in ELIX options first.");
   }
@@ -238,6 +243,8 @@ function openOptions() {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "ELIX_CAPTURE") {
     (async () => {
+      const settings = await getSettings();
+      if (settings.mediaEnabled !== true) throw new Error("Enable image and video capture in ELIX options first.");
       if (!sender.tab?.id) throw new Error("Capture must be requested from a page.");
       const [active] = await chrome.tabs.query({ active: true, windowId: sender.tab.windowId });
       if (active?.id !== sender.tab.id) throw new Error("Keep this tab active while capturing.");

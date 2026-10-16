@@ -175,3 +175,18 @@ button:hover {
   color: var(--muted);
   font-size: 14px;
 }
+
+.feature-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.feature-toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}

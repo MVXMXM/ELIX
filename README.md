@@ -14,7 +14,7 @@ Working Manifest V3 BYOK prototype.
 4. Select this folder (`ELIX`)
 5. Open the extension’s **Options** page and paste your OpenAI API key
 6. Highlight text on any normal webpage and click **ELIX** — it explains at your default level (5, unless you change it in Options)
-7. Hover over an image, video, or canvas, click **ELIX**, and drag a rectangle over the frozen screenshot to explain that region. Press Escape to cancel; very small selections can be redrawn.
+7. Optionally enable **Image and video capture** in Options and save. Hover over an image, video, or canvas, click **ELIX**, and drag a rectangle over the frozen screenshot to explain that region. Press Escape to cancel; very small selections can be redrawn.
 
 After updating an existing installation, reload the extension and the webpage. This version requests `<all_urls>` host access so the in-page button can capture the visible tab. Only the selected crop is sent to the configured API; the full screenshot stays local and is discarded after cropping. Your configured model must support image input.
 

@@ -9,7 +9,7 @@ async function checkBackground() {
   let request;
   let listener;
   const chrome = {
-    storage: { sync: { get: async defaults => ({ ...defaults, apiKey: "test" }) } },
+    storage: { sync: { get: async defaults => ({ ...defaults, apiKey: "test", mediaEnabled: true }) } },
     runtime: { onConnect: { addListener() {} }, onMessage: { addListener(fn) { listener = fn; } } },
     action: { onClicked: { addListener() {} } },
     tabs: { query: async () => [{ id: 7 }], captureVisibleTab: async () => "data:image/png;base64,test" },
@@ -49,7 +49,7 @@ async function checkBackground() {
         ctx.fillStyle = "white"; ctx.font = "40px sans-serif"; ctx.fillText("A diagram", 30, 100);
         window.payloads = [];
         window.chrome = {
-          storage: { sync: { get: async defaults => ({ ...defaults, apiKey: "test" }) }, onChanged: { addListener() {} } },
+          storage: { sync: { get: async defaults => ({ ...defaults, apiKey: "test", mediaEnabled: true }) }, onChanged: { addListener() {} } },
           runtime: {
             sendMessage: async () => {
               const screenshot = document.createElement("canvas");
