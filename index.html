@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="ELIX explains anything you highlight, at the level that fits you."
+    />
+    <title>ELIX — Understand anything</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>ELIX</h1>
+      <p class="intro">
+        In situ explanations with calibrated complexity. Try it by highlighting
+        any word on this page.
+      </p>
+      <a
+        class="button"
+        href="https://github.com/MVXMXM/ELIX"
+        target="_blank"
+        rel="noreferrer"
+      >
+        Try early preview
+      </a>
+    </main>
+    <button class="tip" type="button" hidden aria-label="Explain with ELIX">ELIX</button>
+    <div class="scrim" hidden>
+      <div class="veil"></div>
+    </div>
+    <div class="prompt-bar" hidden>
+      <p class="prompt">Explain like I'm...</p>
+      <div class="levels">
+        <button type="button" data-level="5">5</button>
+        <button type="button" data-level="10">10</button>
+        <button type="button" data-level="15">15</button>
+        <button type="button" data-level="20">20</button>
+      </div>
+    </div>
+    <div class="output" hidden aria-live="polite">
+      <div class="status">Thinking...</div>
+      <div class="result"></div>
+    </div>
+    <script src="script.js"></script>
+  </body>
+</html>
