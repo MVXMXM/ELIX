@@ -115,6 +115,38 @@ async function checkBackground() {
       await page.waitForFunction(() => payloads.length === 2);
       assert.match(await page.evaluate(() => payloads[1].text), /Gravity/);
       assert.equal(await page.evaluate(() => payloads[1].imageDataUrl), undefined);
+
+      const optionsButton = page.getByRole("button", { name: "Options" });
+      const otherButton = page.getByRole("button", { name: "Other" });
+      const persona = page.getByRole("textbox", { name: "Persona or audience" });
+      const closePersona = page.getByRole("button", { name: "Close" });
+      await optionsButton.waitFor({ state: "visible" });
+      const optionsBox = await optionsButton.boundingBox();
+      const otherBox = await otherButton.boundingBox();
+      assert.ok(optionsBox.x >= otherBox.x + otherBox.width - 1);
+      assert.ok(Math.abs((optionsBox.y + optionsBox.height / 2) - (otherBox.y + otherBox.height / 2)) < 8);
+
+      const ageFive = page.getByRole("button", { name: "5", exact: true });
+      await otherButton.click();
+      await ageFive.waitFor({ state: "hidden" });
+      await optionsButton.waitFor({ state: "hidden" });
+      await persona.waitFor({ state: "visible" });
+      assert.equal(await page.getByRole("button", { name: "Go" }).count(), 0);
+      const personaBox = await persona.boundingBox();
+      const closeBox = await closePersona.boundingBox();
+      assert.ok(closeBox.x >= personaBox.x + personaBox.width - 1);
+      assert.ok(personaBox.width > otherBox.width);
+
+      await persona.fill("a tired parent");
+      await persona.press("Enter");
+      await page.waitForFunction(() => payloads.length === 3);
+      assert.equal(await page.evaluate(() => payloads[2].level), "other");
+      assert.equal(await page.evaluate(() => payloads[2].freeform), "a tired parent");
+
+      await closePersona.click();
+      await ageFive.waitFor({ state: "visible" });
+      await optionsButton.waitFor({ state: "visible" });
+      await persona.waitFor({ state: "hidden" });
       assert.deepEqual(errors, []);
       await page.close();
     }

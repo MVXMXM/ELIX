@@ -333,6 +333,10 @@
           max-width: min(560px, calc(100vw - 24px));
         }
 
+        .prompt-bar:has(.other.open) {
+          width: min(560px, calc(100vw - 24px));
+        }
+
         .prompt {
           margin: 0;
           color: #111;
@@ -342,6 +346,7 @@
         .levels {
           display: flex;
           flex-wrap: wrap;
+          align-items: center;
           gap: 6px;
         }
 
@@ -361,6 +366,32 @@
           border-color: #111;
         }
 
+        button.icon {
+          appearance: none;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 26px;
+          height: 26px;
+          padding: 0;
+          border: 1px solid rgba(17, 17, 17, 0.22);
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.55);
+          color: #111;
+          cursor: pointer;
+          flex: none;
+        }
+
+        button.icon:hover {
+          background: rgba(17, 17, 17, 0.06);
+          border-color: #111;
+        }
+
+        button.icon:focus-visible {
+          outline: 2px solid #111;
+          outline-offset: 2px;
+        }
+
         button.level[aria-pressed="true"] {
           background: #111;
           color: #fff;
@@ -373,11 +404,18 @@
 
         .other {
           display: none;
-          flex: 1 1 100%;
+          flex: 1 1 18rem;
+          align-items: center;
           gap: 6px;
+          min-width: min(100%, 18rem);
         }
 
         .other.open { display: flex; }
+
+        .other button.icon {
+          width: 32px;
+          height: 32px;
+        }
 
         .setup {
           display: none;
@@ -390,12 +428,14 @@
 
         .other input {
           flex: 1;
+          width: 100%;
+          height: 32px;
           min-width: 0;
           border-radius: 10px;
           border: 1px solid rgba(17, 17, 17, 0.22);
           background: rgba(255, 255, 255, 0.72);
           color: #111;
-          padding: 7px 9px;
+          padding: 0 10px;
           font: 12px/1.3 "IBM Plex Sans", "Segoe UI", sans-serif;
         }
 
@@ -462,8 +502,12 @@
         <p class="prompt">Explain like I'm…</p>
         <div class="levels"></div>
         <div class="other">
-          <input type="text" placeholder="e.g. French / a cat / a tired parent" />
-          <button type="button" class="go" data-action="submit-other">Go</button>
+          <input type="text" aria-label="Persona or audience" placeholder="e.g. French / a cat / a tired parent" />
+          <button type="button" class="icon" data-action="close-other" aria-label="Close">
+            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+              <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M4 4l8 8M12 4l-8 8"/>
+            </svg>
+          </button>
         </div>
         <div class="setup">
           <p class="prompt">Add an API key to explain this.</p>
@@ -503,7 +547,21 @@
     otherBtn.textContent = "Other";
     otherBtn.dataset.action = "other";
     otherBtn.setAttribute("aria-pressed", "false");
+    otherBtn.setAttribute("aria-expanded", "false");
     levels.appendChild(otherBtn);
+
+    const gear = document.createElement("button");
+    gear.type = "button";
+    gear.className = "icon";
+    gear.dataset.action = "open-options";
+    gear.setAttribute("aria-label", "Options");
+    gear.innerHTML =
+      '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">' +
+      '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>' +
+      '<circle cx="12" cy="12" r="3"/>' +
+      "</g></svg>";
+    levels.appendChild(gear);
 
     scrim.addEventListener("mousedown", (event) => {
       event.preventDefault();
@@ -835,14 +893,28 @@
     }
   }
 
+  function syncPromptControls() {
+    if (!promptBar) return;
+    const setupOn = promptBar.querySelector(".setup").classList.contains("open");
+    const otherOn = promptBar.querySelector(".other").classList.contains("open");
+    promptBar.querySelector(".levels").classList.toggle("hidden", setupOn || otherOn);
+    const otherBtn = promptBar.querySelector('button[data-action="other"]');
+    if (otherBtn) otherBtn.setAttribute("aria-expanded", otherOn ? "true" : "false");
+  }
+
+  function setOtherOpen(open) {
+    if (!promptBar) return;
+    promptBar.querySelector(".other").classList.toggle("open", open);
+    syncPromptControls();
+    if (lastRect && isOverlayOpen()) positionOverlay(lastRect);
+  }
+
   function setSetupMode(on) {
     if (!promptBar) return;
     promptBar.querySelector(".setup").classList.toggle("open", on);
     promptBar.querySelector(":scope > .prompt").classList.toggle("hidden", on);
-    promptBar.querySelector(".levels").classList.toggle("hidden", on);
-    if (on) {
-      promptBar.querySelector(".other").classList.remove("open");
-    }
+    if (on) promptBar.querySelector(".other").classList.remove("open");
+    syncPromptControls();
   }
 
   function startDefaultExplain() {
@@ -857,12 +929,10 @@
     markSelectedLevel(level);
 
     if (level === "other") {
-      const other = promptBar.querySelector(".other");
       const input = promptBar.querySelector(".other input");
-      other.classList.add("open");
-      const freeform = explainDefaults.defaultFreeform.trim();
       input.value = explainDefaults.defaultFreeform;
-      if (lastRect) positionOverlay(lastRect);
+      setOtherOpen(true);
+      const freeform = explainDefaults.defaultFreeform.trim();
       if (freeform) {
         requestExplain("other", freeform);
       } else {
@@ -893,34 +963,36 @@
     const button = event.target.closest("button");
     if (!button) return;
 
-    if (button.dataset.action === "add-key") {
+    if (button.dataset.action === "add-key" || button.dataset.action === "open-options") {
       try {
         chrome.runtime.sendMessage({ type: "ELIX_OPEN_OPTIONS" });
       } catch {
-        showError("Open ELIX options to add your API key.");
+        showError(
+          button.dataset.action === "add-key"
+            ? "Open ELIX options to add your API key."
+            : "Couldn't open ELIX options."
+        );
       }
       return;
     }
 
     if (button.dataset.action === "other") {
       markSelectedLevel("other");
-      const other = promptBar.querySelector(".other");
-      other.classList.add("open");
-      if (lastRect) positionOverlay(lastRect);
+      setOtherOpen(true);
       queueMicrotask(() => promptBar.querySelector(".other input").focus({ preventScroll: true }));
       return;
     }
 
-    if (button.dataset.action === "submit-other") {
-      submitOther();
+    if (button.dataset.action === "close-other") {
+      setOtherOpen(false);
+      promptBar.querySelector('button[data-action="other"]')?.focus({ preventScroll: true });
       return;
     }
 
     if (button.dataset.level) {
-      promptBar.querySelector(".other").classList.remove("open");
+      setOtherOpen(false);
       markSelectedLevel(button.dataset.level);
       requestExplain(button.dataset.level);
-      if (lastRect) positionOverlay(lastRect);
     }
   }
 
