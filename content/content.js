@@ -270,7 +270,45 @@
     window.scrollTo(savedScrollX, savedScrollY);
   }
 
+  // Disc faces have to live on the document. Shadow-root @font-face does not load.
+  function ensureMaskFont() {
+    if (document.getElementById("elix-mask-font")) return;
+    const style = document.createElement("style");
+    style.id = "elix-mask-font";
+    style.textContent = `
+@font-face {
+  font-family: "elix-mask-0";
+  src: url("data:font/woff;base64,d09GRgABAAAAAAMMAAoAAAABAxgAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAABPUy8yAAABZAAAAEIAAABgN2fOmGNtYXAAAAGwAAAAdQABABJACMAWZ2x5ZgAAAjAAAAAsAAAALGiZgT1oZWFkAAAA9AAAADYAAAA2Lq5o/mhoZWEAAAEsAAAAHwAAACQEgADeaG10eAAAAagAAAAGAAAABgGkAABsb2NhAAACKAAAAAYAAAAGABYAAG1heHAAAAFMAAAAFgAAACAABAAObmFtZQAAAlwAAAChAAABICk2MOlwb3N0AAADAAAAAAwAAAAgAAMAAAABAAAAAQAAKTRGU18PPPUAAwPoAAAAAOcdEuMAAAAA5x0S4wBGAMMBGAGVAAAAAwACAAAAAAAAeJxjYGRgYFb4b8HAwBjH4MbgxijBABRBAYwAP/8CYgB4nGNgZGBgYGLgYQDRIBYaAAAB2gATAAB4nGNgYYxjnMDAykAQ/P///r/G/f//H4j/P8DAzsBvDwQMBxgY6t8xK/y3YGBgVmA4AVPL+IVpD5BSYGAAAN4gEfgAAAFeAAAARgAAeJztyAENgDAQA8AOJgG/OEYCoyCDXC7fpp9kS7L3jub4eq67Pav7vNbqypejvzcBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD4vQe8xIeZAAAAAAAAAAAWAAAAAQBGAMMBGAGVAAsAABMyFhUUBiMiJjU0Nq8rPj4rKz4+AZU+Kys+PisrPnicbY5LCsIwFEVPvyKoqENH1XlLugNX4KCDzjMIpfQnKYWuxPWa1CBFfA8e534CAXa88LDjsV2uHZ+NUR8OVn7IiaPjiD1Xx/HSCfBC++pM5tjnwN1xsPJDbjwcR1x4Oo5tR7X1nHZybApVTa3UX504o1R6rIc+yTMhBIqWmpmUDslIQ2G8isn4Ev0nT34apVHaJDUDvUlz809h9w3HICVZAAAAeJxjYGbACwAAfQAE") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "elix-mask-1";
+  src: url("data:font/woff;base64,d09GRgABAAAAAAMIAAoAAAABAxgAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAABPUy8yAAABZAAAAD8AAABg2dhpK2NtYXAAAAGsAAAAdwABABK/+EAFZ2x5ZgAAAiwAAAAsAAAALGiZgT1oZWFkAAAA9AAAADYAAAA2Lq5o/mhoZWEAAAEsAAAAHwAAACQEgADeaG10eAAAAaQAAAAGAAAABgGkAABsb2NhAAACJAAAAAYAAAAGABYAAG1heHAAAAFMAAAAFgAAACAABAAObmFtZQAAAlgAAAChAAABICk2MOlwb3N0AAAC/AAAAAwAAAAgAAMAAAABAAAAAQAA5HQRT18PPPUAAwPoAAAAAOcdEuMAAAAA5x0S4wBGAMMBGAGVAAAAAwACAAAAAAAAeJxjYGRgYFb4b8HAwBjH4MbgxijBABRBAYwAP/8CYgB4nGNgZGBgYGLgYQDRIBYaAAAB2gATAAB4nGNgYYxjnMDAykAQKDAIKfxWYGDg4GCQZ6hgELAHAoYD9e//32VW+G/BwMCswHACppbxC9MesBYGAKLDDDwAAV4AAABGAAB4nO3HAQ2AMBADwAKTgF+UTgMOeJ7JIJdL2zTJnuTonN3b2lFP72j9a1Yl1/11/7EaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACA33sBsXWJdgAAAAAAABYAAAABAEYAwwEYAZUACwAAEzIWFRQGIyImNTQ2rys+PisrPj4BlT4rKz4+Kys+eJxtjksKwjAURU+/IqioQ0fVeUu6A1fgoIPOMwil9Ccpha7E9ZrUIEV8Dx7nfgIBdrzwsOOxXa4dn41RHw5WfsiJo+OIPVfH8dIJ8EL76kzm2OfA3XGw8kNuPBxHXHg6jm1HtfWcdnJsClVNrdRfnTijVHqshz7JMyEEipaamZQOyUhDYbyKyfgS/SdPfhqlUdokNQO9SXPzT2H3DccgJVkAAAB4nGNgZsALAAB9AAQ=") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "elix-mask-2";
+  src: url("data:font/woff;base64,d09GRgABAAAAAAK0AAoAAAAAA3wAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAABPUy8yAAABZAAAADQAAABgR6dFrWNtYXAAAAGgAAAAMAAAAHb//wCkZ2x5ZgAAAdgAAAAsAAAALGiZgT1oZWFkAAAA9AAAADYAAAA2Lq5o/mhoZWEAAAEsAAAAHwAAACQEgADeaG10eAAAAZgAAAAGAAAABgGkAABsb2NhAAAB0AAAAAYAAAAGABYAAG1heHAAAAFMAAAAFgAAACAABAAObmFtZQAAAgQAAAChAAABICk2MOlwb3N0AAACqAAAAAwAAAAgAAMAAAABAAAAAQAAiM3VGV8PPPUAAwPoAAAAAOcdEuMAAAAA5x0S4wBGAMMBGAGVAAAAAwACAAAAAAAAeJxjYGRgYFb4b8HAwBjH4MbgxijBABRBAYwAP/8CYgB4nGNgZGBgYGLgYQDRIBYaAAAB2gATAAB4nGNgYYxjnMDAykAKMAAR9kDAcOD/vf//mRX+WzAwMCswnIApYPzCtAdIKTAwAABW+wrZAV4AAABGAAB4nGNgYGBiYGBgBmIRIMkIplkYkoA0CxAC+f///f8PJO+BSKBaFiDJSCkEALKxCJ4AAAAAABYAAAABAEYAwwEYAZUACwAAEzIWFRQGIyImNTQ2rys+PisrPj4BlT4rKz4+Kys+eJxtjksKwjAURU+/IqioQ0fVeUu6A1fgoIPOMwil9Ccpha7E9ZrUIEV8Dx7nfgIBdrzwsOOxXa4dn41RHw5WfsiJo+OIPVfH8dIJ8EL76kzm2OfA3XGw8kNuPBxHXHg6jm1HtfWcdnJsClVNrdRfnTijVHqshz7JMyEEipaamZQOyUhDYbyKyfgS/SdPfhqlUdokNQO9SXPzT2H3DccgJVkAAAB4nGNgZsALAAB9AAQ=") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+`;
+    (document.head || document.documentElement).appendChild(style);
+    const fonts = document.fonts;
+    if (fonts && fonts.load) {
+      fonts.load('12px "elix-mask-0"', " ");
+      fonts.load('12px "elix-mask-1"', "\u8000");
+      fonts.load('12px "elix-mask-2"', "\uFFDE");
+    }
+  }
+
   function ensureUi() {
+    ensureMaskFont();
     if (host && document.documentElement.contains(host)) {
       return;
     }
@@ -523,12 +561,11 @@
           padding: 0 10px;
         }
 
-        .settings input[name="apiKey"] {
-          -webkit-text-security: disc;
-        }
-
-        .settings input[name="apiKey"]::placeholder {
-          -webkit-text-security: none;
+        /* Disc font keeps the key hidden without the password autofill popover. */
+        .settings input[name="apiKey"]:not(:placeholder-shown) {
+          font-family: "elix-mask-0", "elix-mask-1", "elix-mask-2";
+          font-synthesis: none;
+          caret-color: #111;
         }
 
         .settings select {
