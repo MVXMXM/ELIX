@@ -1,6 +1,6 @@
 (() => {
   const HOST_ID = "elix-root";
-  const version = chrome.runtime.getManifest?.()?.version || "";
+  const version = chrome.runtime.getManifest().version;
   const LEVELS = ["5", "10", "15", "20"];
   const MODELS = ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"];
   const DEFAULT_LEVEL = "5";
@@ -665,7 +665,7 @@
       </div>
       <div class="settings">
         <div class="settings-top">
-          <p class="settings-version">${version ? `v${version}` : ""}</p>
+          <p class="settings-version">v${version}</p>
           <button type="button" class="icon" data-action="close-settings" aria-label="Close">
             <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
               <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M4 4l8 8M12 4l-8 8"/>
