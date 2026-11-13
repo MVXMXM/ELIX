@@ -61,6 +61,7 @@ async function checkBackground() {
         window.chrome = {
           storage: { sync: { get: async defaults => ({ ...defaults, apiKey: "test", mediaEnabled: true }) }, onChanged: { addListener() {} } },
           runtime: {
+            getManifest: () => ({ version: "0.0.1" }),
             sendMessage: async () => {
               const screenshot = document.createElement("canvas");
               screenshot.width = innerWidth * 2; screenshot.height = innerHeight * 2;
@@ -211,6 +212,14 @@ async function checkBackground() {
       await ageFive.waitFor({ state: "visible" });
 
       await settingsButton.click();
+      const versionLabel = page.locator(".settings-version");
+      const closeSettings = page.getByRole("button", { name: "Close" });
+      await versionLabel.waitFor({ state: "visible" });
+      const versionBox = await versionLabel.boundingBox();
+      const closeBox = await closeSettings.boundingBox();
+      assert.equal((await versionLabel.textContent()).trim(), "v0.0.1");
+      assert.ok(versionBox.x < closeBox.x);
+      assert.ok(Math.abs((versionBox.y + versionBox.height / 2) - (closeBox.y + closeBox.height / 2)) < 8);
       const apiKey = page.getByRole("textbox", { name: "API key" });
       await apiKey.waitFor({ state: "visible" });
       assert.equal(await apiKey.getAttribute("type"), "text");

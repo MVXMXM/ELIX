@@ -1,5 +1,6 @@
 (() => {
   const HOST_ID = "elix-root";
+  const version = chrome.runtime.getManifest?.()?.version || "";
   const LEVELS = ["5", "10", "15", "20"];
   const MODELS = ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"];
   const DEFAULT_LEVEL = "5";
@@ -478,8 +479,16 @@
         .settings-top {
           display: flex;
           align-items: center;
-          justify-content: flex-end;
+          justify-content: space-between;
+          gap: 8px;
           margin: -2px -2px 0;
+        }
+
+        .settings-version {
+          margin: 0;
+          color: rgba(17, 17, 17, 0.45);
+          font: 600 11px/1 "IBM Plex Mono", ui-monospace, monospace;
+          letter-spacing: 0.04em;
         }
 
         .settings button.icon {
@@ -656,6 +665,7 @@
       </div>
       <div class="settings">
         <div class="settings-top">
+          <p class="settings-version">${version ? `v${version}` : ""}</p>
           <button type="button" class="icon" data-action="close-settings" aria-label="Close">
             <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
               <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M4 4l8 8M12 4l-8 8"/>
