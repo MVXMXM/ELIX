@@ -1,7 +1,9 @@
 (() => {
   const HOST_ID = "elix-root";
   const LEVELS = ["5", "10", "15", "20"];
+  const MODELS = ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"];
   const DEFAULT_LEVEL = "5";
+  const DEFAULT_MODEL = "gpt-6-luna";
   const OVERLAY_FADE_MS = 220;
   // In-page highlight menus mount after mouseup; wait before placing the chip.
   const MENU_WAIT_MS = 220;
@@ -56,6 +58,7 @@
   let explainPort = null;
   let overlayFadeTimer = null;
   let explainDefaults = { defaultLevel: DEFAULT_LEVEL, defaultFreeform: "" };
+  let settingsState = { apiKey: "", model: DEFAULT_MODEL, mediaEnabled: false };
   let hasApiKey = false;
 
   function isEventFromUi(event) {
@@ -70,6 +73,16 @@
 
   function isTipOpen() {
     return Boolean(tip && !tip.classList.contains("hidden"));
+  }
+
+  function overlayField(event) {
+    if (!promptBar) return null;
+    const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+    const fromPath = path.find((node) => node instanceof Element && node.matches("input, select, textarea"));
+    const active = shadow?.activeElement;
+    const field = fromPath || (active instanceof Element && active.matches("input, select, textarea") ? active : null);
+    if (!field || !promptBar.contains(field)) return null;
+    return field;
   }
 
   function isOtherInputEvent(event) {
@@ -104,12 +117,30 @@
   }
 
   function stopHostKeys(event) {
+    if (event.type === "keydown" && event.key === "Escape" && (captureSession || isOverlayOpen())) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (captureSession) {
+        cancelMediaCapture();
+        return;
+      }
+      if (settingsEl()?.classList.contains("open")) {
+        setSettingsOpen(false);
+        return;
+      }
+      hideOverlay();
+      return;
+    }
+
     if (!isOverlayOpen()) {
       return;
     }
     if (event.isComposing || event.keyCode === 229) {
       return;
     }
+
+    const field = overlayField(event);
+    if (field && !field.matches(".other input")) return;
 
     // Enter and Space are composed, so a page capture listener would act on
     // them before the Other field's own handler runs.
@@ -333,14 +364,17 @@
           max-width: min(560px, calc(100vw - 24px));
         }
 
-        .prompt-bar:has(.other.open) {
-          width: min(560px, calc(100vw - 24px));
-        }
-
         .prompt {
           margin: 0;
           color: #111;
           font: 600 14px/1.3 "IBM Plex Sans", "Segoe UI", sans-serif;
+        }
+
+        .choices {
+          position: relative;
+          display: flex;
+          min-width: 0;
+          max-width: 100%;
         }
 
         .levels {
@@ -348,9 +382,14 @@
           flex-wrap: wrap;
           align-items: center;
           gap: 6px;
+          max-width: 100%;
         }
 
-        button.level, button.go {
+        .choices:has(.other.open) .levels {
+          visibility: hidden;
+        }
+
+        button.level {
           appearance: none;
           border: 1px solid rgba(17, 17, 17, 0.22);
           background: rgba(255, 255, 255, 0.55);
@@ -361,7 +400,7 @@
           cursor: pointer;
         }
 
-        button.level:hover, button.go:hover {
+        button.level:hover {
           background: rgba(17, 17, 17, 0.06);
           border-color: #111;
         }
@@ -402,41 +441,134 @@
           background: #222;
         }
 
+        button.level[data-action="other"] {
+          max-width: min(11rem, calc(100vw - 15.5rem));
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
         .other {
           display: none;
-          flex: 1 1 18rem;
+          position: absolute;
+          inset: 0;
           align-items: center;
           gap: 6px;
-          min-width: min(100%, 18rem);
         }
 
         .other.open { display: flex; }
 
-        .other button.icon {
-          width: 32px;
-          height: 32px;
-        }
-
-        .setup {
+        .settings {
           display: none;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 8px 10px;
+          position: fixed;
+          z-index: 2;
+          flex-direction: column;
+          gap: 8px;
+          width: min(220px, calc(100vw - 16px));
+          padding: 10px;
+          border: 1px solid rgba(17, 17, 17, 0.14);
+          border-radius: 14px;
+          background: rgba(255, 255, 255, 0.9);
+          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+          color: #111;
         }
 
-        .setup.open { display: flex; }
+        .settings.open { display: flex; }
 
-        .other input {
-          flex: 1;
+        .settings-top {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          margin: -2px -2px 0;
+        }
+
+        .settings button.icon {
+          width: 22px;
+          height: 22px;
+        }
+
+        .setting {
+          display: flex;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 4px;
+          min-width: 0;
+          color: #111;
+          font: 600 12px/1 "IBM Plex Sans", "Segoe UI", sans-serif;
+        }
+
+        .settings input,
+        .settings select {
           width: 100%;
           height: 32px;
           min-width: 0;
+          box-sizing: border-box;
           border-radius: 10px;
+          border: 1px solid rgba(17, 17, 17, 0.22);
+          background: rgba(255, 255, 255, 0.72);
+          color: #111;
+          font: 12px/1.3 "IBM Plex Sans", "Segoe UI", sans-serif;
+        }
+
+        .settings input {
+          padding: 0 10px;
+        }
+
+        .settings input[name="apiKey"] {
+          -webkit-text-security: disc;
+        }
+
+        .settings input[name="apiKey"]::placeholder {
+          -webkit-text-security: none;
+        }
+
+        .settings select {
+          padding: 0 28px 0 10px;
+          appearance: none;
+          cursor: pointer;
+          background-color: rgba(255, 255, 255, 0.72);
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23111' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M2.5 4.5 6 8l3.5-3.5'/%3E%3C/svg%3E");
+          background-repeat: no-repeat;
+          background-position: right 8px center;
+        }
+
+        .settings input::placeholder {
+          color: rgba(17, 17, 17, 0.45);
+        }
+
+        .check {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          color: #111;
+          font: 600 12px/1 "IBM Plex Sans", "Segoe UI", sans-serif;
+          cursor: pointer;
+        }
+
+        .check input {
+          flex: none;
+          width: 14px;
+          height: 14px;
+          margin: 0;
+          padding: 0;
+          border: 0;
+          border-radius: 2px;
+          background: transparent;
+          accent-color: #111;
+        }
+
+        .other input {
+          flex: 1 1 auto;
+          width: 0;
+          height: 26px;
+          min-width: 0;
+          border-radius: 999px;
           border: 1px solid rgba(17, 17, 17, 0.22);
           background: rgba(255, 255, 255, 0.72);
           color: #111;
           padding: 0 10px;
           font: 12px/1.3 "IBM Plex Sans", "Segoe UI", sans-serif;
+          text-overflow: ellipsis;
         }
 
         .other input::placeholder {
@@ -500,24 +632,52 @@
 
       <div class="prompt-bar hidden">
         <p class="prompt">Explain like I'm…</p>
-        <div class="levels"></div>
-        <div class="other">
-          <input type="text" aria-label="Persona or audience" placeholder="e.g. French / a cat / a tired parent" />
-          <button type="button" class="icon" data-action="close-other" aria-label="Close">
-            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
-              <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M4 4l8 8M12 4l-8 8"/>
-            </svg>
-          </button>
-        </div>
-        <div class="setup">
-          <p class="prompt">Add an API key to explain this.</p>
-          <button type="button" class="go" data-action="add-key">Add key</button>
+        <div class="choices">
+          <div class="levels"></div>
+          <div class="other">
+            <input type="text" aria-label="Persona or audience" placeholder="e.g. French / a cat / a tired parent" />
+            <button type="button" class="icon" data-action="accept-other" aria-label="Accept">
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+                <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M3.5 8.5 6.5 11.5 12.5 4.5"/>
+              </svg>
+            </button>
+            <button type="button" class="icon" data-action="close-other" aria-label="Cancel">
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+                <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M4 4l8 8M12 4l-8 8"/>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
       <div class="output hidden">
         <div class="status hidden"></div>
         <div class="result hidden"></div>
         <div class="error hidden"></div>
+      </div>
+      <div class="settings">
+        <div class="settings-top">
+          <button type="button" class="icon" data-action="close-settings" aria-label="Close">
+            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+              <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M4 4l8 8M12 4l-8 8"/>
+            </svg>
+          </button>
+        </div>
+        <label class="setting">
+          <span>API key</span>
+          <input type="text" name="apiKey" aria-label="API key" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="sk-..." />
+        </label>
+        <label class="setting">
+          <span>Model</span>
+          <select name="model" aria-label="Model">
+            <option value="gpt-6-luna">GPT-6 Luna</option>
+            <option value="gpt-6.1-terra">GPT-6.1 Terra</option>
+            <option value="gpt-6.1-sol">GPT-6.1 Sol</option>
+          </select>
+        </label>
+        <label class="check">
+          <input type="checkbox" name="mediaEnabled" />
+          <span>Images</span>
+        </label>
       </div>
     `;
 
@@ -553,8 +713,9 @@
     const gear = document.createElement("button");
     gear.type = "button";
     gear.className = "icon";
-    gear.dataset.action = "open-options";
-    gear.setAttribute("aria-label", "Options");
+    gear.dataset.action = "open-settings";
+    gear.setAttribute("aria-label", "Settings");
+    gear.setAttribute("aria-expanded", "false");
     gear.innerHTML =
       '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">' +
       '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
@@ -592,6 +753,10 @@
     }
 
     const otherInput = promptBar.querySelector(".other input");
+    const settings = shadow.querySelector(".settings");
+    const keyInput = settings.querySelector('input[name="apiKey"]');
+    const modelSelect = settings.querySelector('select[name="model"]');
+    const mediaInput = settings.querySelector('input[name="mediaEnabled"]');
     otherInput.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) {
         return;
@@ -607,6 +772,25 @@
     // Allow typing in the freeform field (mousedown preventDefault would block focus).
     otherInput.addEventListener("mousedown", (event) => {
       event.stopPropagation();
+    });
+    settings.addEventListener("mousedown", (event) => {
+      event.stopPropagation();
+      if (!event.target.closest("input, select, textarea")) event.preventDefault();
+    });
+    settings.addEventListener("click", onPromptClick);
+    keyInput.addEventListener("focus", () => pinScroll());
+    keyInput.addEventListener("change", commitApiKey);
+    keyInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) return;
+      event.preventDefault();
+      event.stopPropagation();
+      commitApiKey();
+    });
+    modelSelect.addEventListener("change", () => {
+      persistSettings({ model: supportedModel(modelSelect.value) });
+    });
+    mediaInput.addEventListener("change", () => {
+      persistSettings({ mediaEnabled: mediaInput.checked });
     });
 
     tip.addEventListener("mousedown", (event) => {
@@ -782,8 +966,7 @@
 
   function requestExplain(level, freeform) {
     if (!hasApiKey) {
-      setSetupMode(true);
-      if (lastRect) positionOverlay(lastRect);
+      setSettingsOpen(true);
       return;
     }
 
@@ -876,14 +1059,20 @@
         defaultLevel: DEFAULT_LEVEL,
         defaultFreeform: "",
         apiKey: "",
+        model: DEFAULT_MODEL,
         mediaEnabled: false,
       });
       explainDefaults = {
         defaultLevel: normalizeLevel(stored.defaultLevel),
         defaultFreeform: String(stored.defaultFreeform || ""),
       };
-      setMediaEnabled(stored.mediaEnabled);
-      hasApiKey = Boolean(String(stored.apiKey || "").trim());
+      settingsState = {
+        apiKey: String(stored.apiKey || ""),
+        model: supportedModel(stored.model),
+        mediaEnabled: stored.mediaEnabled === true,
+      };
+      setMediaEnabled(settingsState.mediaEnabled);
+      hasApiKey = Boolean(settingsState.apiKey.trim());
     } catch {
       // Keep the in-memory default if extension storage is unavailable.
     }
@@ -893,13 +1082,132 @@
     }
   }
 
+  function supportedModel(model) {
+    return MODELS.includes(model) ? model : DEFAULT_MODEL;
+  }
+
+  function persistSettings(partial) {
+    Object.assign(settingsState, partial);
+    if (Object.prototype.hasOwnProperty.call(partial, "apiKey")) {
+      hasApiKey = Boolean(String(partial.apiKey || "").trim());
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, "mediaEnabled")) {
+      setMediaEnabled(partial.mediaEnabled);
+    }
+    const write = chrome.storage?.sync?.set?.(partial);
+    if (write?.catch) write.catch(() => {});
+  }
+
+  function savedPersona() {
+    return String(explainDefaults.defaultFreeform || "").trim();
+  }
+
+  function syncOtherPill() {
+    const button = promptBar?.querySelector('button[data-action="other"]');
+    if (!button) return;
+    const label = savedPersona();
+    button.textContent = label || "Other";
+    if (label) button.title = label;
+    else button.removeAttribute("title");
+  }
+
+  function saveLevel(level, freeform) {
+    const normalized = normalizeLevel(level);
+    if (normalized === "other") {
+      const persona = String(freeform || "").trim();
+      explainDefaults = { defaultLevel: "other", defaultFreeform: persona };
+      const write = chrome.storage?.sync?.set?.({ defaultLevel: "other", defaultFreeform: persona });
+      if (write?.catch) write.catch(() => {});
+      syncOtherPill();
+      return;
+    }
+    explainDefaults = { ...explainDefaults, defaultLevel: normalized };
+    const write = chrome.storage?.sync?.set?.({ defaultLevel: normalized });
+    if (write?.catch) write.catch(() => {});
+  }
+
+  function clearOther() {
+    const button = promptBar?.querySelector('button[data-action="other"]');
+    const wasSelected = button?.getAttribute("aria-pressed") === "true";
+    explainDefaults = { ...explainDefaults, defaultFreeform: "" };
+    const patch = { defaultFreeform: "" };
+    if (explainDefaults.defaultLevel === "other") {
+      explainDefaults = { ...explainDefaults, defaultLevel: DEFAULT_LEVEL };
+      patch.defaultLevel = DEFAULT_LEVEL;
+    }
+    const write = chrome.storage?.sync?.set?.(patch);
+    if (write?.catch) write.catch(() => {});
+    syncOtherPill();
+    if (wasSelected) button?.setAttribute("aria-pressed", "false");
+    setOtherOpen(false);
+    button?.focus({ preventScroll: true });
+  }
+
+  function fillSettingsForm() {
+    const settings = settingsEl();
+    if (!settings) return;
+    settings.querySelector('input[name="apiKey"]').value = settingsState.apiKey;
+    settings.querySelector('select[name="model"]').value = supportedModel(settingsState.model);
+    settings.querySelector('input[name="mediaEnabled"]').checked = settingsState.mediaEnabled === true;
+  }
+
+  function commitApiKey() {
+    const input = settingsEl()?.querySelector('input[name="apiKey"]');
+    if (!input) return;
+    const next = input.value.trim();
+    if (next === settingsState.apiKey) return;
+    const becameReady = Boolean(next) && !hasApiKey;
+    persistSettings({ apiKey: next });
+    if (!isOverlayOpen()) return;
+    if (becameReady) {
+      setSettingsOpen(false);
+      startDefaultExplain();
+    } else if (!hasApiKey) {
+      setSettingsOpen(true);
+    }
+  }
+
+  function settingsEl() {
+    return shadow?.querySelector(".settings") || null;
+  }
+
   function syncPromptControls() {
     if (!promptBar) return;
-    const setupOn = promptBar.querySelector(".setup").classList.contains("open");
     const otherOn = promptBar.querySelector(".other").classList.contains("open");
-    promptBar.querySelector(".levels").classList.toggle("hidden", setupOn || otherOn);
     const otherBtn = promptBar.querySelector('button[data-action="other"]');
     if (otherBtn) otherBtn.setAttribute("aria-expanded", otherOn ? "true" : "false");
+    const gear = promptBar.querySelector('button[data-action="open-settings"]');
+    if (gear) gear.setAttribute("aria-expanded", settingsEl()?.classList.contains("open") ? "true" : "false");
+  }
+
+  function placeSettingsBar() {
+    if (!promptBar) return;
+    promptBar.style.maxWidth = `${Math.min(560, window.innerWidth - VIEW_MARGIN * 2)}px`;
+    const barWidth = promptBar.offsetWidth;
+    const left = Math.max(VIEW_MARGIN, Math.round((window.innerWidth - barWidth) / 2));
+    promptBar.style.top = `${VIEW_MARGIN + 16}px`;
+    promptBar.style.left = `${left}px`;
+    placeSettingsPopper();
+  }
+
+  function placeSettingsPopper() {
+    const settings = settingsEl();
+    const gear = promptBar?.querySelector('button[data-action="open-settings"]');
+    if (!settings?.classList.contains("open") || !gear) return;
+    const gap = 8;
+    const margin = VIEW_MARGIN;
+    const gearRect = gear.getBoundingClientRect();
+    const panelWidth = settings.offsetWidth;
+    const panelHeight = settings.offsetHeight;
+    const spaceBelow = window.innerHeight - gearRect.bottom - gap - margin;
+    const spaceAbove = gearRect.top - gap - margin;
+    const openAbove = panelHeight > spaceBelow && spaceAbove > spaceBelow;
+    let top = openAbove ? gearRect.top - gap - panelHeight : gearRect.bottom + gap;
+    top = Math.max(margin, Math.min(top, window.innerHeight - panelHeight - margin));
+    let left = gearRect.right - panelWidth;
+    left = Math.max(margin, Math.min(left, window.innerWidth - panelWidth - margin));
+    settings.style.top = `${Math.round(top)}px`;
+    settings.style.left = `${Math.round(left)}px`;
   }
 
   function setOtherOpen(open) {
@@ -909,34 +1217,53 @@
     if (lastRect && isOverlayOpen()) positionOverlay(lastRect);
   }
 
-  function setSetupMode(on) {
-    if (!promptBar) return;
-    promptBar.querySelector(".setup").classList.toggle("open", on);
-    promptBar.querySelector(":scope > .prompt").classList.toggle("hidden", on);
-    if (on) promptBar.querySelector(".other").classList.remove("open");
+  function setSettingsOpen(open) {
+    const settings = settingsEl();
+    if (!settings || !promptBar) return;
+    if (open) fillSettingsForm();
+    settings.classList.toggle("open", open);
     syncPromptControls();
+    if (open && isOverlayOpen() && !lastRect) placeSettingsBar();
+    else if (open) placeSettingsPopper();
+    if (open) {
+      requestAnimationFrame(() => {
+        if (settings.classList.contains("open")) placeSettingsPopper();
+      });
+    }
+    if (open && !hasApiKey) {
+      queueMicrotask(() => settings.querySelector('input[name="apiKey"]').focus({ preventScroll: true }));
+    }
+  }
+
+  function openOtherEditor() {
+    const input = promptBar.querySelector(".other input");
+    input.value = savedPersona();
+    syncOtherPill();
+    setOtherOpen(true);
+    queueMicrotask(() => {
+      input.focus({ preventScroll: true });
+      input.select();
+    });
   }
 
   function startDefaultExplain() {
+    syncOtherPill();
     if (!hasApiKey) {
-      setSetupMode(true);
-      if (lastRect) positionOverlay(lastRect);
+      setSettingsOpen(true);
       return;
     }
 
-    setSetupMode(false);
+    setSettingsOpen(false);
     const level = normalizeLevel(explainDefaults.defaultLevel);
     markSelectedLevel(level);
 
     if (level === "other") {
-      const input = promptBar.querySelector(".other input");
-      input.value = explainDefaults.defaultFreeform;
-      setOtherOpen(true);
-      const freeform = explainDefaults.defaultFreeform.trim();
+      const freeform = savedPersona();
       if (freeform) {
+        setOtherOpen(false);
         requestExplain("other", freeform);
       } else {
-        queueMicrotask(() => input.focus({ preventScroll: true }));
+        openOtherEditor();
       }
       return;
     }
@@ -952,34 +1279,42 @@
 
     const value = input.value.trim();
     if (!value) {
-      showError("Describe the persona or audience first.");
+      clearOther();
       return;
     }
+    const changed = value !== savedPersona() || explainDefaults.defaultLevel !== "other";
     markSelectedLevel("other");
-    requestExplain("other", value);
+    saveLevel("other", value);
+    setOtherOpen(false);
+    promptBar.querySelector('button[data-action="other"]')?.focus({ preventScroll: true });
+    if (changed) requestExplain("other", value);
   }
 
   function onPromptClick(event) {
     const button = event.target.closest("button");
     if (!button) return;
 
-    if (button.dataset.action === "add-key" || button.dataset.action === "open-options") {
-      try {
-        chrome.runtime.sendMessage({ type: "ELIX_OPEN_OPTIONS" });
-      } catch {
-        showError(
-          button.dataset.action === "add-key"
-            ? "Open ELIX options to add your API key."
-            : "Couldn't open ELIX options."
-        );
-      }
+    if (button.dataset.action === "open-settings") {
+      setSettingsOpen(!settingsEl()?.classList.contains("open"));
       return;
     }
 
     if (button.dataset.action === "other") {
-      markSelectedLevel("other");
-      setOtherOpen(true);
-      queueMicrotask(() => promptBar.querySelector(".other input").focus({ preventScroll: true }));
+      setSettingsOpen(false);
+      const saved = savedPersona();
+      const selected = button.getAttribute("aria-pressed") === "true";
+      if (saved && !selected) {
+        markSelectedLevel("other");
+        saveLevel("other", saved);
+        requestExplain("other", saved);
+        return;
+      }
+      openOtherEditor();
+      return;
+    }
+
+    if (button.dataset.action === "accept-other") {
+      submitOther();
       return;
     }
 
@@ -989,9 +1324,21 @@
       return;
     }
 
+    if (button.dataset.action === "close-settings") {
+      if (!hasApiKey) {
+        hideOverlay();
+        return;
+      }
+      setSettingsOpen(false);
+      promptBar.querySelector('button[data-action="open-settings"]')?.focus({ preventScroll: true });
+      return;
+    }
+
     if (button.dataset.level) {
       setOtherOpen(false);
+      setSettingsOpen(false);
       markSelectedLevel(button.dataset.level);
+      saveLevel(button.dataset.level, "");
       requestExplain(button.dataset.level);
     }
   }
@@ -1021,6 +1368,7 @@
     output.style.top = `${Math.round(outTop)}px`;
     output.style.left = `${Math.round(barLeft)}px`;
     output.style.maxHeight = `${Math.max(80, window.innerHeight - outTop - VIEW_MARGIN)}px`;
+    placeSettingsPopper();
   }
 
   function hideTip() {
@@ -1045,11 +1393,12 @@
       focusCatcher.classList.add("hidden");
 
       promptBar.querySelector(".other").classList.remove("open");
+      settingsEl()?.classList.remove("open");
       promptBar.querySelector(".other input").value = "";
       promptBar.querySelectorAll("button.level").forEach((button) => {
         button.setAttribute("aria-pressed", "false");
       });
-      setSetupMode(false);
+      syncPromptControls();
       output.querySelector(".status").classList.add("hidden");
       output.querySelector(".result").classList.add("hidden");
       output.querySelector(".result").textContent = "";
@@ -2033,6 +2382,19 @@
     showTimer = setTimeout(showTipForSelection, 16);
   }
 
+  function openSettingsFromToolbar() {
+    ensureUi();
+    clearTimeout(overlayFadeTimer);
+    focusCatcher.classList.add("hidden");
+    fadeOpen(scrim);
+    fadeOpen(promptBar);
+    output.classList.remove("open");
+    output.classList.add("hidden");
+    lockScroll();
+    updateSpotlight();
+    setSettingsOpen(true);
+  }
+
   function openOverlay(imageCapture = false) {
     cancelScheduledTip();
     hideTip();
@@ -2059,6 +2421,7 @@
     lockScroll();
 
     promptBar.querySelector(".other").classList.remove("open");
+    settingsEl()?.classList.remove("open");
     promptBar.querySelector(".other input").value = "";
     output.querySelector(".status").classList.add("hidden");
     output.querySelector(".result").classList.add("hidden");
@@ -2131,6 +2494,10 @@
       positionOverlay(lastRect);
       return;
     }
+    if (isOverlayOpen()) {
+      placeSettingsBar();
+      return;
+    }
     cancelScheduledTip();
     hideTip();
   });
@@ -2141,6 +2508,12 @@
     if (captureSession) {
       event.preventDefault();
       cancelMediaCapture();
+      return;
+    }
+
+    if (isOverlayOpen() && settingsEl()?.classList.contains("open")) {
+      event.preventDefault();
+      setSettingsOpen(false);
       return;
     }
 
@@ -2163,22 +2536,38 @@
   window.addEventListener("keyup", stopHostKeys, true);
 
   refreshExplainDefaults();
+  if (chrome.runtime?.onMessage?.addListener) {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type === "ELIX_OPEN_SETTINGS") openSettingsFromToolbar();
+    });
+  }
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "sync") return;
-    if (changes.mediaEnabled) {
-      setMediaEnabled(changes.mediaEnabled.newValue);
+    if (changes.mediaEnabled && changes.mediaEnabled.newValue !== settingsState.mediaEnabled) {
+      settingsState.mediaEnabled = changes.mediaEnabled.newValue === true;
+      setMediaEnabled(settingsState.mediaEnabled);
     }
     if (changes.defaultLevel) {
       explainDefaults.defaultLevel = normalizeLevel(changes.defaultLevel.newValue);
     }
     if (changes.defaultFreeform) {
       explainDefaults.defaultFreeform = String(changes.defaultFreeform.newValue || "");
+      syncOtherPill();
+    }
+    if (changes.model) {
+      settingsState.model = supportedModel(changes.model.newValue);
     }
     if (changes.apiKey) {
-      const ready = Boolean(String(changes.apiKey.newValue || "").trim());
-      hasApiKey = ready;
-      if (ready && isOverlayOpen()) {
+      const key = String(changes.apiKey.newValue || "");
+      if (key === settingsState.apiKey) return;
+      settingsState.apiKey = key;
+      hasApiKey = Boolean(key.trim());
+      if (!isOverlayOpen()) return;
+      if (hasApiKey) {
+        setSettingsOpen(false);
         startDefaultExplain();
+      } else {
+        setSettingsOpen(true);
       }
     }
   });

@@ -1,9 +1,16 @@
+const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
+
+const MODELS = ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"];
+
 const DEFAULTS = {
   apiKey: "",
   mediaEnabled: false,
-  model: "gpt-4o-mini",
-  baseUrl: "https://api.openai.com/v1",
+  model: "gpt-6-luna",
 };
+
+function supportedModel(model) {
+  return MODELS.includes(model) ? model : DEFAULTS.model;
+}
 
 async function getSettings() {
   const stored = await chrome.storage.sync.get(DEFAULTS);
@@ -137,11 +144,11 @@ async function explainTextStream({ text, imageDataUrl, level, freeform, context 
   const settings = await getSettings();
 
   if (imageDataUrl && settings.mediaEnabled !== true) {
-    throw new Error("Enable image and video capture in ELIX options first.");
+    throw new Error("Enable image and video capture in ELIX settings first.");
   }
 
   if (!settings.apiKey) {
-    throw new Error("Add your OpenAI API key in ELIX options first.");
+    throw new Error("Add your OpenAI API key in ELIX settings first.");
   }
 
   if (!text?.trim() && !imageDataUrl) {
@@ -151,28 +158,33 @@ async function explainTextStream({ text, imageDataUrl, level, freeform, context 
     throw new Error("The captured image is invalid or too large.");
   }
 
-  const baseUrl = settings.baseUrl.replace(/\/$/, "");
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  const model = supportedModel(settings.model);
+  // These models reason unless told not to. A gloss should start immediately.
+  const reasoningEffort = model === "gpt-6.1-sol" ? "low" : "none";
+  const body = {
+    model,
+    stream: true,
+    reasoning_effort: reasoningEffort,
+    messages: [
+      {
+        role: "user",
+        content: imageDataUrl ? [
+          { type: "text", text: buildImagePrompt(level, freeform, context) },
+          { type: "image_url", image_url: { url: imageDataUrl, detail: "high" } },
+        ] : buildPrompt(text.trim(), level, freeform?.trim(), context),
+      },
+    ],
+  };
+  if (reasoningEffort === "none") body.temperature = 0.4;
+
+  const response = await fetch(OPENAI_CHAT_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${settings.apiKey}`,
     },
     signal,
-    body: JSON.stringify({
-      model: settings.model,
-      temperature: 0.4,
-      stream: true,
-      messages: [
-        {
-          role: "user",
-          content: imageDataUrl ? [
-            { type: "text", text: buildImagePrompt(level, freeform, context) },
-            { type: "image_url", image_url: { url: imageDataUrl, detail: "high" } },
-          ] : buildPrompt(text.trim(), level, freeform?.trim(), context),
-        },
-      ],
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -236,15 +248,11 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
-function openOptions() {
-  chrome.runtime.openOptionsPage();
-}
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "ELIX_CAPTURE") {
     (async () => {
       const settings = await getSettings();
-      if (settings.mediaEnabled !== true) throw new Error("Enable image and video capture in ELIX options first.");
+      if (settings.mediaEnabled !== true) throw new Error("Enable image and video capture in ELIX settings first.");
       if (!sender.tab?.id) throw new Error("Capture must be requested from a page.");
       const [active] = await chrome.tabs.query({ active: true, windowId: sender.tab.windowId });
       if (active?.id !== sender.tab.id) throw new Error("Keep this tab active while capturing.");
@@ -256,11 +264,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(error => sendResponse({ error: error.message || String(error) }));
     return true;
   }
-  if (message?.type === "ELIX_OPEN_OPTIONS") {
-    openOptions();
-  }
 });
 
-chrome.action.onClicked.addListener(() => {
-  openOptions();
+chrome.action.onClicked.addListener((tab) => {
+  if (!tab?.id) return;
+  const send = chrome.tabs.sendMessage(tab.id, { type: "ELIX_OPEN_SETTINGS" });
+  if (send?.catch) send.catch(() => {});
 });
