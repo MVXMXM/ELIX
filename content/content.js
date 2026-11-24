@@ -640,7 +640,7 @@
           position: fixed;
           appearance: none;
           border: 1px solid transparent;
-          background: #1a1a1a;
+          background: #00bbff;
           color: #fff;
           padding: 7px 10px;
           border-radius: 999px;
@@ -656,12 +656,11 @@
         }
 
         .tip:hover {
-          background: #314158;
-          border-color: #00bbff;
+          background: #00aeea;
         }
 
         .tip:focus-visible {
-          outline: 2px solid #00bbff;
+          outline: 2px solid #0f172b;
           outline-offset: 2px;
         }
 
@@ -684,7 +683,7 @@
       <div class="focus-catcher hidden"></div>
       <button type="button" class="tip hidden" aria-label="Explain with ELIX">
         <!-- Keep the inline paths in sync with icons/elix-wordmark.svg. -->
-        <svg aria-hidden="true" focusable="false" viewBox="0 0 71.5 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 71.5 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
           <!-- E -->
           <path d="M16 4.965A4 4 0 0 0 12.136 2H6a4 4 0 0 0-4 4v3a3 3 0 0 0 3 3h7M5 12a3 3 0 0 0-3 3v3a4 4 0 0 0 4 4H12.136A4 4 0 0 0 16 19.035"/>
           <!-- L -->
