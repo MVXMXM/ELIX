@@ -6,12 +6,12 @@
     if (target) {
       import(new URL("../scripts/landing-demo.mjs", script.src).href)
         .then(({ createDemoBrowser }) => createDemoBrowser())
-        .then((browser) => initializeElix(browser, target));
+        .then((browser) => initializeElix(browser, target, script.dataset.elixPreview));
     }
     return;
   }
   initializeElix(chrome);
-})(function initializeElix(browser, demoTarget) {
+})(function initializeElix(browser, demoTarget, preview) {
   const HOST_ID = "elix-root";
   const version = browser.runtime.getManifest().version;
   const LEVELS = ["5", "10", "15", "20"];
@@ -2600,6 +2600,7 @@
     }
     cancelScheduledTip();
     hideTip();
+    if (preview === "chip" && readSelection()) scheduleTip();
   });
 
   document.addEventListener("keydown", (event) => {
@@ -2636,6 +2637,17 @@
   window.addEventListener("keyup", stopHostKeys, true);
 
   refreshExplainDefaults();
+  if (preview) {
+    document.fonts.ready.then(() => {
+      const range = document.createRange();
+      range.selectNodeContents(demoTarget);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      if (preview === "overlay") openOverlay();
+      else showTipForSelection();
+    });
+  }
   if (browser.runtime?.onMessage?.addListener) {
     browser.runtime.onMessage.addListener((message) => {
       if (message?.type === "ELIX_OPEN_SETTINGS") openSettingsFromToolbar();
