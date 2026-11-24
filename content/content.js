@@ -1,6 +1,19 @@
-(() => {
+((initializeElix) => {
+  const script = document.currentScript;
+  const demoTarget = script?.dataset.elixDemo;
+  if (demoTarget) {
+    const target = document.getElementById(demoTarget);
+    if (target) {
+      import(new URL("../scripts/landing-demo.mjs", script.src).href)
+        .then(({ createDemoBrowser }) => createDemoBrowser())
+        .then((browser) => initializeElix(browser, target));
+    }
+    return;
+  }
+  initializeElix(chrome);
+})(function initializeElix(browser, demoTarget) {
   const HOST_ID = "elix-root";
-  const version = chrome.runtime.getManifest().version;
+  const version = browser.runtime.getManifest().version;
   const LEVELS = ["5", "10", "15", "20"];
   const MODELS = ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"];
   const DEFAULT_LEVEL = "5";
@@ -848,6 +861,12 @@
       if (!event.target.closest("input, select, textarea")) event.preventDefault();
     });
     settings.addEventListener("click", onPromptClick);
+    if (demoTarget) {
+      keyInput.readOnly = true;
+      keyInput.placeholder = "No API key needed for the demo";
+      mediaInput.disabled = true;
+      mediaInput.closest("label").title = "Image capture is available in the browser extension.";
+    }
     keyInput.addEventListener("focus", () => pinScroll());
     keyInput.addEventListener("change", commitApiKey);
     keyInput.addEventListener("keydown", (event) => {
@@ -1051,7 +1070,7 @@
 
     let port;
     try {
-      port = chrome.runtime.connect({ name: "elix-explain" });
+      port = browser.runtime.connect({ name: "elix-explain" });
     } catch (error) {
       showError(error?.message || String(error));
       return;
@@ -1096,7 +1115,7 @@
     port.onDisconnect.addListener(() => {
       if (port !== explainPort) return;
       explainPort = null;
-      const err = chrome.runtime.lastError?.message;
+      const err = browser.runtime.lastError?.message;
       if (err) showError(err);
     });
 
@@ -1125,7 +1144,7 @@
 
   async function refreshExplainDefaults() {
     try {
-      const stored = await chrome.storage.sync.get({
+      const stored = await browser.storage.sync.get({
         defaultLevel: DEFAULT_LEVEL,
         defaultFreeform: "",
         apiKey: "",
@@ -1142,7 +1161,7 @@
         mediaEnabled: stored.mediaEnabled === true,
       };
       setMediaEnabled(settingsState.mediaEnabled);
-      hasApiKey = Boolean(settingsState.apiKey.trim());
+      hasApiKey = Boolean(demoTarget || settingsState.apiKey.trim());
     } catch {
       // Keep the in-memory default if extension storage is unavailable.
     }
@@ -1164,7 +1183,7 @@
     if (Object.prototype.hasOwnProperty.call(partial, "mediaEnabled")) {
       setMediaEnabled(partial.mediaEnabled);
     }
-    const write = chrome.storage?.sync?.set?.(partial);
+    const write = browser.storage?.sync?.set?.(partial);
     if (write?.catch) write.catch(() => {});
   }
 
@@ -1186,13 +1205,13 @@
     if (normalized === "other") {
       const persona = String(freeform || "").trim();
       explainDefaults = { defaultLevel: "other", defaultFreeform: persona };
-      const write = chrome.storage?.sync?.set?.({ defaultLevel: "other", defaultFreeform: persona });
+      const write = browser.storage?.sync?.set?.({ defaultLevel: "other", defaultFreeform: persona });
       if (write?.catch) write.catch(() => {});
       syncOtherPill();
       return;
     }
     explainDefaults = { ...explainDefaults, defaultLevel: normalized };
-    const write = chrome.storage?.sync?.set?.({ defaultLevel: normalized });
+    const write = browser.storage?.sync?.set?.({ defaultLevel: normalized });
     if (write?.catch) write.catch(() => {});
   }
 
@@ -1205,7 +1224,7 @@
       explainDefaults = { ...explainDefaults, defaultLevel: DEFAULT_LEVEL };
       patch.defaultLevel = DEFAULT_LEVEL;
     }
-    const write = chrome.storage?.sync?.set?.(patch);
+    const write = browser.storage?.sync?.set?.(patch);
     if (write?.catch) write.catch(() => {});
     syncOtherPill();
     if (wasSelected) button?.setAttribute("aria-pressed", "false");
@@ -2173,6 +2192,10 @@
       return null;
     }
 
+    if (demoTarget && (!demoTarget.contains(range.startContainer) || !demoTarget.contains(range.endContainer))) {
+      return null;
+    }
+
     if (host && selection.anchorNode && host.contains(selection.anchorNode)) {
       return null;
     }
@@ -2283,7 +2306,7 @@
       // Let the hidden button paint before Chrome takes the screenshot.
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       if (captureSession !== session) return;
-      const response = await chrome.runtime.sendMessage({ type: "ELIX_CAPTURE" });
+      const response = await browser.runtime.sendMessage({ type: "ELIX_CAPTURE" });
       if (captureSession !== session) return;
       if (response?.error || !response?.dataUrl) throw new Error(response?.error || "Could not capture this page.");
       const image = new Image();
@@ -2530,7 +2553,14 @@
       return;
     }
 
-    if (isTipOpen() && text !== lastText) {
+    if (demoTarget) {
+      if (!demoTarget.contains(selection.anchorNode) || !demoTarget.contains(selection.focusNode)) {
+        cancelScheduledTip();
+        hideTip();
+      } else if (!isTipOpen() || text !== lastText) {
+        scheduleTip();
+      }
+    } else if (isTipOpen() && text !== lastText) {
       hideTip();
     }
   });
@@ -2606,12 +2636,12 @@
   window.addEventListener("keyup", stopHostKeys, true);
 
   refreshExplainDefaults();
-  if (chrome.runtime?.onMessage?.addListener) {
-    chrome.runtime.onMessage.addListener((message) => {
+  if (browser.runtime?.onMessage?.addListener) {
+    browser.runtime.onMessage.addListener((message) => {
       if (message?.type === "ELIX_OPEN_SETTINGS") openSettingsFromToolbar();
     });
   }
-  chrome.storage.onChanged.addListener((changes, area) => {
+  browser.storage.onChanged.addListener((changes, area) => {
     if (area !== "sync") return;
     if (changes.mediaEnabled && changes.mediaEnabled.newValue !== settingsState.mediaEnabled) {
       settingsState.mediaEnabled = changes.mediaEnabled.newValue === true;
@@ -2641,4 +2671,4 @@
       }
     }
   });
-})();
+});
