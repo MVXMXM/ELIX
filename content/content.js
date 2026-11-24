@@ -639,12 +639,9 @@
         .tip {
           position: fixed;
           appearance: none;
-          border: 1px solid rgba(244, 241, 234, 0.12);
-          background: #171a1d;
-          color: #e8c468;
-          font: 600 11px/1 "IBM Plex Mono", ui-monospace, monospace;
-          letter-spacing: 0.14em;
-          text-transform: uppercase;
+          border: 1px solid transparent;
+          background: #1a1a1a;
+          color: #fff;
           padding: 7px 10px;
           border-radius: 999px;
           box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
@@ -652,9 +649,20 @@
           user-select: none;
         }
 
+        .tip svg {
+          display: block;
+          width: 36px;
+          height: 12px;
+        }
+
         .tip:hover {
-          background: #22262b;
-          border-color: rgba(232, 196, 104, 0.7);
+          background: #314158;
+          border-color: #00bbff;
+        }
+
+        .tip:focus-visible {
+          outline: 2px solid #00bbff;
+          outline-offset: 2px;
         }
 
         @keyframes elix-tip-in {
@@ -674,7 +682,23 @@
         <div class="marks"></div>
       </div>
       <div class="focus-catcher hidden"></div>
-      <button type="button" class="tip hidden" aria-label="Explain with ELIX">ELIX</button>
+      <button type="button" class="tip hidden" aria-label="Explain with ELIX">
+        <!-- Keep the inline paths in sync with icons/elix-wordmark.svg. -->
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 71.5 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <!-- E -->
+          <path d="M16 4.965A4 4 0 0 0 12.136 2H6a4 4 0 0 0-4 4v3a3 3 0 0 0 3 3h7M5 12a3 3 0 0 0-3 3v3a4 4 0 0 0 4 4H12.136A4 4 0 0 0 16 19.035"/>
+          <!-- L -->
+          <path d="M22 2v16a4 4 0 0 0 4 4H30.136A4 4 0 0 0 34 19.035"/>
+          <!-- I · Lucide Text Cursor -->
+          <g transform="translate(32)">
+            <path d="M17 22h-1a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4h1"/>
+            <path d="M7 22h1a4 4 0 0 0 4-4"/>
+            <path d="M7 2h1a4 4 0 0 1 4 4"/>
+          </g>
+          <!-- X -->
+          <path d="M55.5 2v2c0 3.5 3.5 5.75 7 8s7 4.5 7 8v2M69.5 2v2c0 3.5-3.5 5.75-7 8S55.5 16.5 55.5 20v2"/>
+        </svg>
+      </button>
 
       <div class="prompt-bar hidden">
         <p class="prompt">Explain like I'm…</p>
