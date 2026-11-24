@@ -46,11 +46,73 @@
 
     .description {
       max-width: 500px;
-      margin: 32px auto;
+      margin: 32px auto 12px;
       font-size: 1.125rem;
       line-height: 1.5;
       text-wrap: balance;
     }
+
+    .description::selection { background: #a5eaff; }
+
+    .demo-actions { margin: 0 0 24px; }
+
+    .demo-actions button,
+    .demo button {
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .demo-trigger {
+      border: 1px solid transparent;
+      border-radius: 999px;
+      padding: 6px 12px;
+      background: transparent;
+      color: var(--ink);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .demo-trigger[data-selected] {
+      background: var(--ink);
+      color: white;
+      text-decoration: none;
+    }
+
+    .demo {
+      margin: 0 auto 24px;
+      padding: 16px;
+      border: 1px solid #d5dce5;
+      border-radius: 16px;
+      background: white;
+      box-shadow: 0 8px 24px #0f172b14;
+      text-align: left;
+    }
+
+    .demo-header, .demo-levels {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .demo-header { justify-content: space-between; }
+    .demo h2 { margin: 0; font-size: 1rem; }
+
+    .demo button {
+      border: 1px solid #d5dce5;
+      border-radius: 8px;
+      padding: 5px 9px;
+      background: var(--canvas);
+      color: var(--ink);
+    }
+
+    .demo button[aria-pressed="true"] {
+      border-color: var(--ink);
+      background: var(--ink);
+      color: white;
+    }
+
+    #demo-result { margin: 12px 0 0; line-height: 1.5; }
 
     .button {
       display: inline-flex;
@@ -86,10 +148,27 @@
 <body>
   <main>
     <h1><img class="wordmark" src="icons/elix-wordmark.svg" width="180" height="60" alt="ELIX"></h1>
-    <p class="description">
+    <p class="description" id="demo-text">
       Highlight text on a webpage and get an explanation right there,
       at the level you choose.
     </p>
+    <div class="demo-actions">
+      <button type="button" class="demo-trigger" aria-controls="elix-demo" aria-expanded="false">Try the demo</button>
+    </div>
+    <section class="demo" id="elix-demo" aria-labelledby="demo-title" hidden>
+      <div class="demo-header">
+        <h2 id="demo-title">ELIX demo</h2>
+        <button type="button" id="demo-close" aria-label="Close demo">×</button>
+      </div>
+      <p id="demo-prompt">Explain like I’m…</p>
+      <div class="demo-levels" role="group" aria-labelledby="demo-prompt">
+        <button type="button" aria-pressed="true" data-level="5">5</button>
+        <button type="button" aria-pressed="false" data-level="10">10</button>
+        <button type="button" aria-pressed="false" data-level="15">15</button>
+        <button type="button" aria-pressed="false" data-level="20">20</button>
+      </div>
+      <p id="demo-result" aria-live="polite"></p>
+    </section>
     <a class="button" href="https://github.com/MVXMXM/ELIX#chromium-alpha-test">
       <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
         <path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38l-.01-1.49c-2.23.48-2.7-.95-2.7-.95-.36-.92-.89-1.16-.89-1.16-.73-.5.06-.49.06-.49.8.06 1.22.82 1.22.82.71 1.22 1.87.87 2.33.67.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.13 0 0 .67-.22 2.2.82a7.65 7.65 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.11.16 1.93.08 2.13.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.74.54 1.49l-.01 2.18c0 .21.15.46.55.38A8 8 0 0 0 8 0Z"/>
@@ -102,5 +181,65 @@
       </svg>
     </a>
   </main>
+  <script>
+    const sample = document.querySelector('#demo-text');
+    const trigger = document.querySelector('.demo-trigger');
+    const demo = document.querySelector('#elix-demo');
+    const close = document.querySelector('#demo-close');
+    const result = document.querySelector('#demo-result');
+    const levels = [...demo.querySelectorAll('[data-level]')];
+    const explanations = {
+      5: 'If some words are hard to understand, pick them and ELIX tells you what they mean in simple words. You can stay right where you’re reading.',
+      10: 'Select a sentence you find confusing. ELIX explains it on the same page, and you can pick how simple or detailed the answer should be.',
+      15: 'ELIX uses the text you highlight to show an explanation on the page you’re reading. Choose a level to adjust the vocabulary and depth of the answer.',
+      20: 'ELIX uses your text selection as input and displays an explanation alongside the original material. The level you choose guides the assumed background knowledge and amount of detail.'
+    };
+    let level = '5';
+
+    function showExplanation() {
+      result.textContent = explanations[level];
+      for (const button of levels) {
+        button.setAttribute('aria-pressed', String(button.dataset.level === level));
+      }
+    }
+
+    document.addEventListener('selectionchange', () => {
+      const selection = window.getSelection();
+      const selected = Boolean(selection?.toString().trim()
+        && sample.contains(selection.anchorNode)
+        && sample.contains(selection.focusNode));
+      trigger.toggleAttribute('data-selected', selected);
+      trigger.textContent = selected ? 'Explain with ELIX' : 'Try the demo';
+    });
+
+    trigger.addEventListener('mousedown', (event) => {
+      if (trigger.hasAttribute('data-selected')) event.preventDefault();
+    });
+
+    trigger.addEventListener('click', () => {
+      demo.hidden = false;
+      trigger.setAttribute('aria-expanded', 'true');
+      showExplanation();
+      demo.querySelector('[aria-pressed="true"]').focus();
+    });
+
+    for (const button of levels) {
+      button.addEventListener('click', () => {
+        level = button.dataset.level;
+        showExplanation();
+      });
+    }
+
+    function closeDemo() {
+      demo.hidden = true;
+      trigger.setAttribute('aria-expanded', 'false');
+      trigger.focus();
+    }
+
+    close.addEventListener('click', closeDemo);
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !demo.hidden) closeDemo();
+    });
+  </script>
 </body>
 </html>
