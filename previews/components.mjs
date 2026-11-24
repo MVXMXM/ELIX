@@ -5,6 +5,7 @@ const selectors = {
   alpha: ".button",
   chip: ".description",
   overlay: ".description",
+  settings: ".description",
 };
 
 const response = await fetch("/index.html");
@@ -17,7 +18,7 @@ for (const style of landing.head.querySelectorAll('style, link[rel="stylesheet"]
 
 const main = document.createElement("main");
 const sample = landing.querySelector(selectors[component]);
-const interactive = component === "chip" || component === "overlay";
+const interactive = component === "chip" || component === "overlay" || component === "settings";
 
 main.append(sample);
 document.body.append(main);
@@ -25,6 +26,7 @@ main.style.marginBottom = "0";
 document.body.style.padding = "12px";
 
 if (interactive) {
+  main.hidden = component === "settings";
   document.body.style.placeItems = "start center";
   main.style.marginTop = "8px";
 

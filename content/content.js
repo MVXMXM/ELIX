@@ -806,6 +806,10 @@
       '<circle cx="12" cy="12" r="3"/>' +
       "</g></svg>";
     levels.appendChild(gear);
+    if (preview === "settings") {
+      shadow.querySelector(".prompt").hidden = true;
+      for (const button of levels.querySelectorAll(".level")) button.hidden = true;
+    }
 
     scrim.addEventListener("mousedown", (event) => {
       event.preventDefault();
@@ -1294,6 +1298,7 @@
     let top = openAbove ? gearRect.top - gap - panelHeight : gearRect.bottom + gap;
     top = Math.max(margin, Math.min(top, window.innerHeight - panelHeight - margin));
     let left = gearRect.right - panelWidth;
+    if (preview === "settings") left = (window.innerWidth - panelWidth) / 2;
     left = Math.max(margin, Math.min(left, window.innerWidth - panelWidth - margin));
     settings.style.top = `${Math.round(top)}px`;
     settings.style.left = `${Math.round(left)}px`;
@@ -2637,7 +2642,9 @@
   window.addEventListener("keyup", stopHostKeys, true);
 
   refreshExplainDefaults();
-  if (preview) {
+  if (preview === "settings") {
+    document.fonts.ready.then(openSettingsFromToolbar);
+  } else if (preview) {
     document.fonts.ready.then(() => {
       const range = document.createRange();
       range.selectNodeContents(demoTarget);
