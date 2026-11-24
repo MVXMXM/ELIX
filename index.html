@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ELIX is a browser extension that explains highlighted text at the level you choose, right on the page.">
+  <meta name="theme-color" content="#f8fafc">
+  <link rel="icon" href="icons/elix.svg" type="image/svg+xml">
+  <title>ELIX — Explain what you highlight</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600&amp;display=swap">
+  <style>
+    :root {
+      --canvas: #f8fafc;
+      --ink: #0f172b;
+      --accent: #00bbff;
+      font-family: Archivo, system-ui, sans-serif;
+      background: var(--canvas);
+      color: var(--ink);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      min-height: 100svh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 2rem 1.5rem;
+    }
+
+    main {
+      width: min(100%, 32rem);
+      margin-bottom: 80px;
+      text-align: center;
+    }
+
+    h1 { margin: 0; }
+
+    .wordmark {
+      display: block;
+      margin-inline: auto;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .description {
+      max-width: 500px;
+      margin: 32px auto;
+      font-size: 1.125rem;
+      line-height: 1.5;
+      text-wrap: balance;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      gap: 16px;
+      padding: .8125rem .75rem;
+      border: 1px solid transparent;
+      border-radius: 2.5rem;
+      background: #1a1a1a;
+      color: #fff;
+      font-size: .875rem;
+      font-weight: 600;
+      line-height: 1;
+      text-decoration: none;
+    }
+
+    .button svg {
+      flex: none;
+      width: 1rem;
+      height: 1rem;
+    }
+
+    .button:hover { background: #314158; }
+
+    .button:focus-visible {
+      outline: 2px solid var(--ink);
+      outline-offset: 2px;
+      box-shadow: 0 0 0 6px var(--accent);
+    }
+
+  </style>
+</head>
+<body>
+  <main>
+    <h1><img class="wordmark" src="icons/elix-wordmark.svg" width="180" height="60" alt="ELIX"></h1>
+    <p class="description">
+      Highlight text on a webpage and get an explanation right there,
+      at the level you choose.
+    </p>
+    <a class="button" href="https://github.com/MVXMXM/ELIX#chromium-alpha-test">
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38l-.01-1.49c-2.23.48-2.7-.95-2.7-.95-.36-.92-.89-1.16-.89-1.16-.73-.5.06-.49.06-.49.8.06 1.22.82 1.22.82.71 1.22 1.87.87 2.33.67.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.13 0 0 .67-.22 2.2.82a7.65 7.65 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.11.16 1.93.08 2.13.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.74.54 1.49l-.01 2.18c0 .21.15.46.55.38A8 8 0 0 0 8 0Z"/>
+      </svg>
+      <span>Try the alpha</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M22 12A10 10 0 1 1 12 2"/>
+        <path d="M22 2 12 12"/>
+        <path d="M16 2h6v6"/>
+      </svg>
+    </a>
+  </main>
+</body>
+</html>
