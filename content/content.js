@@ -341,6 +341,13 @@
       <style>
         :host, * { box-sizing: border-box; }
 
+        :host([data-elix-isolated-settings]) .scrim,
+        :host([data-elix-isolated-settings]) .focus-catcher,
+        :host([data-elix-isolated-settings]) .prompt-bar,
+        :host([data-elix-isolated-settings]) .output {
+          visibility: hidden;
+        }
+
         .scrim {
           position: fixed;
           inset: 0;
@@ -806,10 +813,6 @@
       '<circle cx="12" cy="12" r="3"/>' +
       "</g></svg>";
     levels.appendChild(gear);
-    if (preview === "settings") {
-      shadow.querySelector(".prompt").hidden = true;
-      for (const button of levels.querySelectorAll(".level")) button.hidden = true;
-    }
 
     scrim.addEventListener("mousedown", (event) => {
       event.preventDefault();
@@ -1292,13 +1295,17 @@
     const gearRect = gear.getBoundingClientRect();
     const panelWidth = settings.offsetWidth;
     const panelHeight = settings.offsetHeight;
+    if (preview === "settings") {
+      settings.style.top = `${Math.round(Math.max(margin, (window.innerHeight - panelHeight) / 2))}px`;
+      settings.style.left = `${Math.round(Math.max(margin, (window.innerWidth - panelWidth) / 2))}px`;
+      return;
+    }
     const spaceBelow = window.innerHeight - gearRect.bottom - gap - margin;
     const spaceAbove = gearRect.top - gap - margin;
     const openAbove = panelHeight > spaceBelow && spaceAbove > spaceBelow;
     let top = openAbove ? gearRect.top - gap - panelHeight : gearRect.bottom + gap;
     top = Math.max(margin, Math.min(top, window.innerHeight - panelHeight - margin));
     let left = gearRect.right - panelWidth;
-    if (preview === "settings") left = (window.innerWidth - panelWidth) / 2;
     left = Math.max(margin, Math.min(left, window.innerWidth - panelWidth - margin));
     settings.style.top = `${Math.round(top)}px`;
     settings.style.left = `${Math.round(left)}px`;
@@ -2641,18 +2648,24 @@
   window.addEventListener("keypress", stopHostKeys, true);
   window.addEventListener("keyup", stopHostKeys, true);
 
-  refreshExplainDefaults();
-  if (preview === "settings") {
-    document.fonts.ready.then(openSettingsFromToolbar);
-  } else if (preview) {
-    document.fonts.ready.then(() => {
+  const defaultsReady = refreshExplainDefaults();
+  if (preview) {
+    Promise.all([document.fonts.ready, defaultsReady]).then(() => {
       const range = document.createRange();
       range.selectNodeContents(demoTarget);
       const selection = window.getSelection();
       selection.removeAllRanges();
       selection.addRange(range);
-      if (preview === "overlay") openOverlay();
-      else showTipForSelection();
+      if (preview === "chip") {
+        showTipForSelection();
+        return;
+      }
+      openOverlay();
+      if (preview === "settings") {
+        promptBar.querySelector('[data-action="open-settings"]').click();
+        host.setAttribute("data-elix-isolated-settings", "");
+        demoTarget.style.visibility = "hidden";
+      }
     });
   }
   if (browser.runtime?.onMessage?.addListener) {

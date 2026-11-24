@@ -26,7 +26,6 @@ main.style.marginBottom = "0";
 document.body.style.padding = "12px";
 
 if (interactive) {
-  main.hidden = component === "settings";
   document.body.style.placeItems = "start center";
   main.style.marginTop = "8px";
 
