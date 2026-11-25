@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+rm -rf dist
+mkdir -p dist/icons
+cp index.html dist/index.html
+cp icons/elix.svg icons/elix-wordmark.svg dist/icons/
+[[ -d "dist" ]] || {
+  echo "Expected build output at dist" >&2
+  exit 1
+}
+figma make deploy-preview --build-dir "dist"
