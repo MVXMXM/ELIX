@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ELIX API Key</title>
+  <link rel="stylesheet" href="popup.bundle.css">
+  <link rel="stylesheet" href="popup.css">
+  <script src="api-key.js" defer></script>
+</head>
+<body>
+  <main class="maxos-menu api-key-editor">
+    <svg class="api-key-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/>
+      <circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/>
+    </svg>
+    <h1>Add an API key to ELIX</h1>
+    <p class="api-key-description">
+      ELIX runs on your own <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">OpenAI API key</a>, so please consider the risks &amp; costs of using this extension. We hold no responsibility for charges or changes to your account, the choice is yours.
+    </p>
+    <form autocomplete="off">
+      <fieldset disabled>
+        <input type="password" name="apiKey" aria-label="API key" placeholder="sk-..." spellcheck="false" autocomplete="off">
+        <button class="system-button system-button--primary" type="submit" disabled>Add my key</button>
+      </fieldset>
+      <button class="system-button system-button--secondary" type="button" id="cancel-key-removal" hidden>Cancel</button>
+      <p id="status" role="status"></p>
+    </form>
+  </main>
+</body>
+</html>

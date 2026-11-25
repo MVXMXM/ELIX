@@ -24,10 +24,16 @@
   "host_permissions": [
     "<all_urls>"
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["popup/popup.html"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ],
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["content/content.js"],
+      "js": ["content/age-selector.bundle.js", "content/content.js", "content/toolbar-panel.js"],
       "run_at": "document_start"
     }
   ]

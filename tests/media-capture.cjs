@@ -2,8 +2,10 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const { pathToFileURL } = require("node:url");
 const { chromium } = require("playwright");
 const root = path.resolve(__dirname, "..");
+const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"));
 
 async function checkBackground() {
   let request;
@@ -42,12 +44,133 @@ async function checkBackground() {
   assert.match(denied.error, /active/);
 }
 
+async function checkPopup(browser) {
+  const page = await browser.newPage();
+  try {
+    await page.addInitScript(version => {
+      window.savedSettings = { model: "retired-model" };
+      window.chrome = {
+        runtime: {
+          getManifest: () => ({ version }),
+          sendMessage: async message => message.type === "ELIX_API_KEY_STATUS" && savedSettings.apiKey
+            ? "sk-...TaoA" : null,
+        },
+        storage: {
+          sync: {
+            get: async defaults => ({ ...defaults, ...window.savedSettings }),
+            set: async settings => Object.assign(window.savedSettings, settings),
+            remove: async name => { delete window.savedSettings[name]; },
+          },
+          onChanged: { addListener(listener) { window.notifySettings = listener; } },
+        },
+      };
+    }, manifest.version);
+    await page.goto(pathToFileURL(path.join(root, "popup/popup.html")).href);
+    const logo = page.getByRole("img", { name: "ELIX" });
+    const instructions = page.getByText("Please add an API key to start using ELIX.");
+    await logo.waitFor({ state: "visible" });
+    await instructions.waitFor({ state: "visible" });
+    const wordmarkStyle = await logo.evaluate(el => {
+      const { backgroundColor, maskImage } = getComputedStyle(el);
+      return { backgroundColor, maskImage };
+    });
+    assert.equal(wordmarkStyle.backgroundColor, "rgb(0, 187, 255)");
+    assert.match(wordmarkStyle.maskImage, /elix-wordmark\.svg/);
+    const addApiKey = page.getByRole("button", { name: "Add an API key" });
+    await addApiKey.waitFor({ state: "visible" });
+    const repo = page.getByRole("link", { name: "Source code", exact: true });
+    const settings = page.getByRole("button", { name: "Settings", exact: true });
+    const editApiKey = page.getByRole("button", { name: "Edit API Key" });
+    const model = page.getByLabel("Model");
+    assert.equal(await repo.getAttribute("href"), "https://github.com/MVXMXM/ELIX");
+    assert.equal(await repo.getAttribute("target"), "_blank");
+    await editApiKey.waitFor({ state: "hidden" });
+    assert.equal(await settings.count(), 0);
+    assert.ok((await addApiKey.boundingBox()).y < (await repo.boundingBox()).y);
+    await page.evaluate(() => {
+      savedSettings.apiKey = "test";
+      notifySettings({ apiKey: { newValue: "test" } }, "sync");
+    });
+    await addApiKey.waitFor({ state: "hidden" });
+    await page.getByText("Highlight text on the page, then click ELIX.").waitFor();
+    await settings.click();
+    await repo.waitFor({ state: "hidden" });
+    await editApiKey.waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Delete API Key" }).waitFor();
+    assert.equal(await page.locator("#masked-api-key").textContent(), "sk-...TaoA");
+    assert.equal(await page.locator("input[type=password]").count(), 0);
+    assert.equal(await model.inputValue(), "gpt-6-luna");
+    await model.selectOption("gpt-6.1-sol");
+    await page.waitForFunction(() => savedSettings.model === "gpt-6.1-sol");
+    const images = page.getByRole("switch", { name: "Media input (alpha)" });
+    await images.waitFor({ state: "visible" });
+    const dividerGaps = await page.locator("#settings hr").evaluateAll(dividers => dividers.map(divider => {
+      const above = divider.previousElementSibling || divider.parentElement.previousElementSibling;
+      const below = divider.nextElementSibling;
+      const bounds = divider.getBoundingClientRect();
+      return [
+        bounds.top - above.getBoundingClientRect().bottom,
+        below.getBoundingClientRect().top - bounds.bottom,
+      ];
+    }));
+    assert.deepEqual(dividerGaps, [[24, 24], [24, 24], [24, 24]]);
+    assert.equal(await images.getAttribute("aria-checked"), "false");
+    await images.press("Space");
+    await images.and(page.getByRole("switch", { checked: true })).waitFor();
+    await page.waitForFunction(() => savedSettings.mediaEnabled === true);
+    assert.equal(await page.getByRole("button", { name: /^(Save|Cancel)$/ }).count(), 0);
+    await page.getByRole("button", { name: "Back" }).click();
+    await editApiKey.waitFor({ state: "hidden" });
+    await repo.waitFor({ state: "visible" });
+    assert.deepEqual(await page.evaluate(() => savedSettings), {
+      apiKey: "test", model: "gpt-6.1-sol", mediaEnabled: true,
+    });
+    await settings.click();
+    assert.equal(await model.inputValue(), "gpt-6.1-sol");
+    assert.equal(await images.getAttribute("aria-checked"), "true");
+    await page.evaluate(() => {
+      delete savedSettings.apiKey;
+      notifySettings({ apiKey: { oldValue: "test" } }, "sync");
+    });
+    await addApiKey.click();
+    await page.waitForURL("**/api-key.html");
+    const apiKey = page.getByLabel("API key", { exact: true });
+    const addMyKey = page.getByRole("button", { name: "Add my key" });
+    assert.equal(await apiKey.getAttribute("type"), "password");
+    assert.equal(await addMyKey.isDisabled(), true);
+    await apiKey.fill("   ");
+    assert.equal(await addMyKey.isDisabled(), true);
+    await apiKey.fill(" test ");
+    assert.equal(await addMyKey.isEnabled(), true);
+    await page.getByRole("heading", { name: "Add an API key to ELIX" }).waitFor();
+    const platform = page.getByRole("link", { name: "OpenAI API key", exact: true });
+    assert.equal(await platform.getAttribute("href"), "https://platform.openai.com/api-keys");
+    assert.equal(await platform.getAttribute("target"), "_blank");
+    await addMyKey.click();
+    await page.getByRole("status").filter({ hasText: "API key saved." }).waitFor();
+    assert.deepEqual(await page.evaluate(() => savedSettings), { apiKey: "test", model: "retired-model" });
+    await page.goto(pathToFileURL(path.join(root, "popup/api-key.html")).href + "?remove=1");
+    await page.getByRole("heading", { name: "Delete API key?" }).waitFor();
+    await page.getByRole("button", { name: "Cancel" }).waitFor();
+    await page.evaluate(() => { savedSettings.apiKey = "test"; });
+    await page.getByRole("button", { name: "Delete key" }).click();
+    await page.getByRole("status").filter({ hasText: "API key removed." }).waitFor();
+    assert.deepEqual(await page.evaluate(() => savedSettings), { model: "retired-model" });
+    assert.ok(manifest.web_accessible_resources.every(entry => !entry.resources.includes("popup/api-key.html")));
+  } finally {
+    await page.close();
+  }
+}
+
 (async () => {
   await checkBackground();
   const browser = await chromium.launch({ headless: true, executablePath: process.env.ELIX_CHROME_PATH || undefined });
   try {
+    await checkPopup(browser);
     for (const viewport of [{ width: 1200, height: 800 }, { width: 390, height: 844 }]) {
       const page = await browser.newPage({ viewport, deviceScaleFactor: 2 });
+      const reducedMotion = viewport.width < 500;
+      if (reducedMotion) await page.emulateMedia({ reducedMotion: "reduce" });
       page.setDefaultTimeout(10000);
       const errors = [];
       page.on("pageerror", error => errors.push(error.message));
@@ -59,9 +182,11 @@ async function checkBackground() {
         ctx.fillStyle = "white"; ctx.font = "40px sans-serif"; ctx.fillText("A diagram", 30, 100);
         window.payloads = [];
         window.chrome = {
-          storage: { sync: { get: async defaults => ({ ...defaults, apiKey: "test", mediaEnabled: true }) }, onChanged: { addListener() {} } },
+          storage: { sync: { get: async defaults => ({ ...defaults, apiKey: "test", mediaEnabled: true }) }, onChanged: { addListener(listener) { window.changeSettings = listener; } } },
           runtime: {
             getManifest: () => ({ version: "0.0.1" }),
+            getURL: name => `chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/${name}`,
+            onMessage: { addListener() {} },
             sendMessage: async () => {
               const screenshot = document.createElement("canvas");
               screenshot.width = innerWidth * 2; screenshot.height = innerHeight * 2;
@@ -70,11 +195,18 @@ async function checkBackground() {
               c.drawImage(canvas, 80, 80, 560, 360);
               return { dataUrl: screenshot.toDataURL() };
             },
-            connect: () => ({ onMessage: { addListener() {} }, onDisconnect: { addListener() {} }, disconnect() {}, postMessage(message) { payloads.push(message.payload); } }),
+            connect: () => ({
+              onMessage: { addListener(listener) { window.respondToExplain = listener; } },
+              onDisconnect: { addListener() {} },
+              disconnect() {},
+              postMessage(message) { payloads.push(message.payload); },
+            }),
           },
         };
       });
-      await page.addScriptTag({ path: path.join(root, "content/content.js") });
+      for (const script of manifest.content_scripts[0].js) {
+        await page.addScriptTag({ path: path.join(root, script) });
+      }
       const tip = page.locator("#elix-root .tip");
       const dialog = page.getByRole("dialog", { name: "Select an image region" });
       await page.mouse.move(100, 100);
@@ -127,22 +259,41 @@ async function checkBackground() {
       assert.match(await page.evaluate(() => payloads[1].text), /Gravity/);
       assert.equal(await page.evaluate(() => payloads[1].imageDataUrl), undefined);
 
-      const settingsButton = page.getByRole("button", { name: "Settings" });
-      const otherButton = page.getByRole("button", { name: "Other" });
+      const loader = page.getByRole("status").filter({ hasText: "Thinking" });
+      const definition = page.locator("#elix-root .result");
+      await loader.waitFor({ state: "visible" });
+      assert.match(await loader.evaluate(el => getComputedStyle(el).fontFamily), /ELIX Inter/);
+      const visibleOnFirstChunk = await page.evaluate(() => {
+        const result = document.querySelector("#elix-root").shadowRoot.querySelector(".result");
+        respondToExplain({ type: "chunk", text: "Gravity" });
+        const visible = !result.classList.contains("hidden");
+        respondToExplain({ type: "chunk", text: " pulls" });
+        return visible;
+      });
+      assert.equal(visibleOnFirstChunk, reducedMotion);
+      await loader.waitFor({ state: "hidden" });
+      await definition.waitFor({ state: "visible" });
+      assert.equal(await definition.textContent(), "Gravity pulls");
+      await page.evaluate(() => {
+        respondToExplain({ type: "chunk", text: " things together." });
+        respondToExplain({ type: "done" });
+      });
+      assert.equal(await definition.textContent(), "Gravity pulls things together.");
+
+      const ageSelector = page.getByRole("group", { name: "Explanation age" });
+      const otherButton = ageSelector.getByRole("button", { name: "Other" });
       const persona = page.getByRole("textbox", { name: "Persona or audience" });
       const cancelPersona = page.getByRole("button", { name: "Cancel" });
-      await settingsButton.waitFor({ state: "visible" });
-      const settingsBox = await settingsButton.boundingBox();
-      const otherBox = await otherButton.boundingBox();
-      assert.ok(settingsBox.x >= otherBox.x + otherBox.width - 1);
-      assert.ok(Math.abs((settingsBox.y + settingsBox.height / 2) - (otherBox.y + otherBox.height / 2)) < 8);
+      assert.equal(await page.getByRole("button", { name: "Settings" }).count(), 0);
 
-      const ageFive = page.getByRole("button", { name: "5", exact: true });
+      const ageFive = ageSelector.getByRole("button", { name: "5", exact: true });
+      assert.deepEqual(await ageSelector.getByRole("button").allTextContents(), ["5", "10", "15", "20", "Other"]);
+      assert.equal(await ageFive.getAttribute("aria-pressed"), "true");
       const bar = page.locator("#elix-root .prompt-bar");
       const barBefore = await bar.boundingBox();
+      const otherBox = await otherButton.boundingBox();
       await otherButton.click();
       await ageFive.waitFor({ state: "hidden" });
-      await settingsButton.waitFor({ state: "hidden" });
       await persona.waitFor({ state: "visible" });
       const barAfter = await bar.boundingBox();
       assert.ok(Math.abs(barAfter.width - barBefore.width) <= 2);
@@ -162,16 +313,17 @@ async function checkBackground() {
       assert.equal(await page.evaluate(() => payloads[2].level), "other");
       assert.equal(await page.evaluate(() => payloads[2].freeform), "a tired parent");
 
-      const pill = page.getByRole("button", { name: "a tired parent" });
+      const pill = ageSelector.getByRole("button", { name: "a tired parent" });
       await pill.waitFor({ state: "visible" });
       await ageFive.waitFor({ state: "visible" });
-      await settingsButton.waitFor({ state: "visible" });
       await persona.waitFor({ state: "hidden" });
       assert.equal(await pill.getAttribute("aria-pressed"), "true");
 
-      await ageFive.click();
+      assert.equal(await ageFive.getAttribute("aria-pressed"), "false");
+      await ageFive.press("Space");
       await page.waitForFunction(() => payloads.length === 4);
       assert.equal(await page.evaluate(() => payloads[3].level), "5");
+      assert.equal(await ageFive.getAttribute("aria-pressed"), "true");
       assert.equal(await pill.getAttribute("aria-pressed"), "false");
 
       await pill.click();
@@ -196,9 +348,18 @@ async function checkBackground() {
       await persona.fill(longName);
       await persona.press("Enter");
       await page.waitForFunction(() => payloads.length === 6);
-      const longPill = page.getByRole("button", { name: longName });
+      const longPill = ageSelector.getByRole("button", { name: longName });
       await longPill.waitFor({ state: "visible" });
-      assert.equal(await longPill.evaluate((el) => el.scrollWidth > el.clientWidth + 1), true);
+      const personaLabels = page.locator(".age-selector .persona-segment-label");
+      const labelMetrics = await personaLabels.evaluateAll((labels) => labels.map(label => ({
+        width: label.getBoundingClientRect().width,
+        truncated: label.scrollWidth > label.clientWidth,
+        overflow: getComputedStyle(label).textOverflow,
+      })));
+      assert.equal(labelMetrics.length, 2);
+      assert.deepEqual(labelMetrics[0], labelMetrics[1]);
+      assert.equal(labelMetrics[0].truncated, true);
+      assert.equal(labelMetrics[0].overflow, "ellipsis");
       assert.equal(await longPill.getAttribute("title"), longName);
       await page.screenshot({ path: `/tmp/elix-persona-${viewport.width}.png` });
 
@@ -211,39 +372,34 @@ async function checkBackground() {
       await persona.waitFor({ state: "hidden" });
       await ageFive.waitFor({ state: "visible" });
 
-      await settingsButton.click();
-      const versionLabel = page.locator(".settings-version");
-      const closeSettings = page.getByRole("button", { name: "Close" });
-      await versionLabel.waitFor({ state: "visible" });
-      const versionBox = await versionLabel.boundingBox();
-      const closeBox = await closeSettings.boundingBox();
-      assert.equal((await versionLabel.textContent()).trim(), "v0.0.1");
-      assert.ok(versionBox.x < closeBox.x);
-      assert.ok(Math.abs((versionBox.y + versionBox.height / 2) - (closeBox.y + closeBox.height / 2)) < 8);
-      const apiKey = page.getByRole("textbox", { name: "API key" });
-      await apiKey.waitFor({ state: "visible" });
-      assert.equal(await apiKey.getAttribute("type"), "text");
-      assert.equal(await apiKey.evaluate((el) => getComputedStyle(el).webkitTextSecurity), "disc");
-      await page.getByRole("combobox", { name: "Model" }).waitFor({ state: "visible" });
-      await ageFive.waitFor({ state: "visible" });
-      await page.getByRole("checkbox", { name: "Images" }).waitFor({ state: "visible" });
-      const gearBox = await settingsButton.boundingBox();
-      const keyBox = await apiKey.boundingBox();
-      assert.ok(keyBox.x < gearBox.x + gearBox.width && keyBox.x + keyBox.width > gearBox.x);
-      assert.ok(Math.abs((keyBox.y + keyBox.height / 2) - (gearBox.y + gearBox.height / 2)) > 12);
-      await page.screenshot({ path: `/tmp/elix-settings-${viewport.width}.png` });
+      const segmentStyle = await ageFive.evaluate(el => {
+        const { fontFamily, fontSize, letterSpacing } = getComputedStyle(el);
+        return { fontFamily, fontSize, letterSpacing };
+      });
+      assert.match(segmentStyle.fontFamily, /ELIX Inter/);
+      assert.equal(segmentStyle.fontSize, "14px");
+      assert.equal(segmentStyle.letterSpacing, "normal");
+      const resultStyle = await page.locator(".output .result").evaluate((el) => {
+        const { fontFamily, fontSize, lineHeight } = getComputedStyle(el);
+        return { fontFamily, fontSize, lineHeight };
+      });
+      assert.match(resultStyle.fontFamily, /^"ELIX Inter"/);
+      assert.equal(resultStyle.fontSize, "16px");
+      assert.equal(resultStyle.lineHeight, "26px");
+      assert.deepEqual(await page.evaluate(async () => {
+        const faces = await document.fonts.load('16px "ELIX Inter"');
+        return faces.map(face => face.status);
+      }), ["loaded"]);
+      await page.evaluate(() => changeSettings({ apiKey: { newValue: "" } }, "sync"));
+      await page.getByText("API key required. Open ELIX in the Chrome toolbar to add it.").waitFor();
+      await page.evaluate(() => changeSettings({ apiKey: { newValue: "test" } }, "sync"));
+      await page.waitForFunction(() => payloads.length === 7);
       await page.keyboard.press("Escape");
-      await apiKey.waitFor({ state: "hidden" });
-      await ageFive.waitFor({ state: "visible" });
-      await settingsButton.click();
-      await apiKey.waitFor({ state: "visible" });
-      await page.getByRole("button", { name: "Close" }).click();
-      await ageFive.waitFor({ state: "visible" });
-      await apiKey.waitFor({ state: "hidden" });
+      await ageFive.waitFor({ state: "hidden" });
       assert.deepEqual(errors, []);
       await page.close();
     }
-    console.log("PASS: image/text requests, active-tab guard, image/video/canvas hover, Escape, reverse crop at 2x scale, resize cancellation, return to text, desktop and narrow viewport.");
+    console.log("PASS: toolbar popup, image/text requests, active-tab guard, image/video/canvas hover, Escape, reverse crop at 2x scale, resize cancellation, return to text, desktop and narrow viewport.");
   } finally {
     await browser.close();
   }

@@ -1,0 +1,378 @@
+@font-face {
+  font-family: "ELIX Inter";
+  src: url("../content/fonts/inter-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../content/fonts/jetbrains-mono-latin.woff2") format("woff2");
+  font-weight: 100 800;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+  --font-inter: "ELIX Inter";
+  --surface: #fcfcfc;
+  --background-alt: #f1f5f9;
+  --hairline: #e2e8f0;
+  --border: #cad5e2;
+  --muted: #62748e;
+  --foreground: #0f172b;
+  --accent: #00bbff;
+}
+
+body { margin: 0; }
+
+.maxos-menu {
+  width: 304px;
+  margin: 0;
+  padding: 24px;
+  color: var(--foreground);
+  line-height: 1.5;
+}
+
+html.embedded {
+  display: flow-root;
+  background: transparent;
+}
+
+.embedded .maxos-menu {
+  width: auto;
+  margin: 36px 36px 40px;
+}
+
+header {
+  display: flex;
+}
+
+body:has(#home:not([hidden])) header {
+  justify-content: center;
+}
+
+body:has(#home:not([hidden])) .wordmark {
+  width: 108px;
+  height: 36px;
+  margin: 24px 0;
+  background: var(--accent);
+  mask: url("../icons/elix-wordmark.svg") center / contain no-repeat;
+}
+
+#version {
+  display: block;
+  color: var(--muted);
+  font: 500 11px/1 "JetBrains Mono", ui-monospace, monospace;
+  font-feature-settings: "zero";
+}
+
+body:has(#home:not([hidden])) #version {
+  margin-top: 24px;
+  text-align: center;
+}
+
+body:has(#settings:not([hidden])) header,
+body:has(#settings:not([hidden])) #version {
+  display: none;
+}
+
+.instructions {
+  margin: 0 0 24px;
+  color: #020618;
+  font: 700 16px/1.75 var(--font-inter), sans-serif;
+  letter-spacing: 0;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.instructions:empty { display: none; }
+
+.home-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.system-button[hidden] { display: none; }
+
+.maxos-menu-icon svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.settings-heading {
+  display: grid;
+  grid-template-columns: 32px 1fr 32px;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.settings-heading h1 {
+  margin: 0;
+  text-align: center;
+}
+
+#back-settings {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--foreground);
+  background: var(--background-alt);
+  cursor: pointer;
+}
+
+#back-settings:hover { background: var(--hairline); }
+
+#back-settings:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+#back-settings svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.menu-label {
+  font-family: var(--font-inter), sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: normal;
+  color: var(--foreground);
+}
+
+#settings hr {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid #e0e0e0;
+}
+
+h1 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+fieldset {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+#settings fieldset {
+  gap: 24px;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  font-weight: 600;
+}
+
+input, select, button {
+  font: inherit;
+}
+
+.api-key-editor input {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  color: var(--foreground);
+  background: var(--surface);
+  font-weight: 400;
+}
+
+.model-picker {
+  position: relative;
+  display: block;
+}
+
+.model-picker select {
+  appearance: none;
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--hairline);
+  border-radius: 40px;
+  padding: 10px 34px 10px 14px;
+  color: var(--foreground);
+  background: var(--surface);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.model-picker select:enabled:hover { background: var(--background-alt); }
+.model-picker select:disabled { cursor: default; opacity: 0.6; }
+
+.model-picker svg {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#images-control { display: flex; }
+
+.system-button {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 40px;
+  padding: 13px 22px;
+  font: 500 14px/1 var(--font-inter), sans-serif;
+  letter-spacing: normal;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s, transform 0.1s;
+}
+
+.system-button:not(:disabled):active { transform: translateY(1px); }
+.system-button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.system-button--primary {
+  color: #fff;
+  background: #1a1a1a;
+}
+
+.system-button--primary:not(:disabled):hover { background: #333; }
+
+.system-button--secondary {
+  border-color: var(--hairline);
+  color: var(--foreground);
+  background: var(--surface);
+}
+
+.system-button--secondary:not(:disabled):hover { background: var(--background-alt); }
+
+.maxos-menu-option:disabled {
+  background: transparent;
+  cursor: default;
+  opacity: 0.6;
+}
+
+input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+#status {
+  margin: 8px 8px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+body:has(#home:not([hidden])) #status { text-align: center; }
+
+#status:empty { display: none; }
+
+.maxos-menu.api-key-editor {
+  padding: 16px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.api-key-icon {
+  display: block;
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.api-key-editor h1 { text-align: center; }
+
+.api-key-description {
+  margin: 0 0 16px;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 400;
+  text-align: center;
+}
+
+.api-key-description a {
+  color: inherit;
+  text-underline-offset: 2px;
+}
+
+.api-key-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#masked-api-key {
+  flex: 1;
+  min-width: 0;
+  font: 500 14px/1.4 "JetBrains Mono", ui-monospace, monospace;
+  font-feature-settings: "zero";
+}
+
+.key-action {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex: none;
+}
+
+.key-action:hover:enabled { background: var(--background-alt); }
+.key-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.key-action:disabled { opacity: 0.5; cursor: default; }
+#delete-api-key { color: #c21c1c; }
+
+.key-action svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#cancel-key-removal { width: 100%; margin-top: 8px; }

@@ -1,0 +1,17 @@
+{
+  "name": "elix",
+  "private": true,
+  "scripts": {
+    "build": "esbuild content/age-selector.jsx --bundle --minify --jsx=automatic --loader:.css=text --loader:.woff2=binary --global-name=ElixAgeSelector --outfile=content/age-selector.bundle.js && esbuild popup/popup.jsx --bundle --minify --jsx=automatic --outfile=popup/popup.bundle.js",
+    "test": "node tests/media-capture.cjs"
+  },
+  "dependencies": {
+    "@mvxmxm/maxos": "0.4.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.0",
+    "playwright": "^1.56.0"
+  }
+}
