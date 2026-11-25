@@ -7,13 +7,26 @@
   <meta name="theme-color" content="#f8fafc">
   <link rel="icon" href="icons/elix.svg" type="image/svg+xml">
   <title>ELIX — Explain what you highlight</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600&amp;display=swap">
   <style>
+    @font-face {
+      font-family: "Archivo:SemiBold";
+      src: url("https://static.figma.com/font/Archivo_wdth_wght__1") format("woff2");
+      font-style: normal;
+      font-weight: 600;
+    }
+
+    @font-face {
+      font-family: "Inter:Medium";
+      src: url("https://static.figma.com/font/Inter_1") format("woff2");
+      font-style: normal;
+      font-weight: 500;
+    }
+
     :root {
       --canvas: #f8fafc;
       --ink: #0f172b;
       --accent: #00bbff;
-      font-family: Archivo, system-ui, sans-serif;
+      font-family: system-ui, sans-serif;
       background: var(--canvas);
       color: var(--ink);
     }
@@ -47,7 +60,9 @@
     .description {
       max-width: 500px;
       margin: 32px auto;
+      font-family: "Inter:Medium", Inter, system-ui, sans-serif;
       font-size: 1.125rem;
+      font-weight: 500;
       line-height: 1.5;
       text-wrap: balance;
     }
@@ -59,21 +74,22 @@
       padding: .8125rem .75rem;
       border: 1px solid transparent;
       border-radius: 2.5rem;
-      background: #1a1a1a;
+      background: var(--accent);
       color: #fff;
+      font-family: "Archivo:SemiBold", Archivo, system-ui, sans-serif;
       font-size: .875rem;
       font-weight: 600;
+      font-variation-settings: "wdth" 100;
       line-height: 1;
       text-decoration: none;
     }
 
-    .button svg {
+    .button img {
+      display: block;
       flex: none;
-      width: 1rem;
-      height: 1rem;
     }
 
-    .button:hover { background: #314158; }
+    .button:hover { background: #00a8e6; }
 
     .button:focus-visible {
       outline: 2px solid var(--ink);
@@ -91,15 +107,9 @@
       at the level you choose.
     </p>
     <a class="button" href="https://github.com/MVXMXM/ELIX#chromium-alpha-test">
-      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-        <path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38l-.01-1.49c-2.23.48-2.7-.95-2.7-.95-.36-.92-.89-1.16-.89-1.16-.73-.5.06-.49.06-.49.8.06 1.22.82 1.22.82.71 1.22 1.87.87 2.33.67.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.13 0 0 .67-.22 2.2.82a7.65 7.65 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.11.16 1.93.08 2.13.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.74.54 1.49l-.01 2.18c0 .21.15.46.55.38A8 8 0 0 0 8 0Z"/>
-      </svg>
+      <img src="/assets/github.svg" alt="">
       <span>Try the alpha</span>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M22 12A10 10 0 1 1 12 2"/>
-        <path d="M22 2 12 12"/>
-        <path d="M16 2h6v6"/>
-      </svg>
+      <img src="/assets/external-link.svg" alt="">
     </a>
   </main>
 </body>
