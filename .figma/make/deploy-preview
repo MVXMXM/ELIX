@@ -2,9 +2,10 @@
 set -euo pipefail
 
 rm -rf dist
-mkdir -p dist/icons
+mkdir -p dist/assets dist/icons
 cp index.html dist/index.html
 cp icons/elix.svg icons/elix-wordmark.svg dist/icons/
+cp public/assets/756fc.svg public/assets/6ad1e.svg public/assets/22aa0.svg dist/assets/
 [[ -d "dist" ]] || {
   echo "Expected build output at dist" >&2
   exit 1
