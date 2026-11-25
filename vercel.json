@@ -1,0 +1,5 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "mkdir -p dist/icons && cp index.html dist/index.html && cp icons/elix.svg icons/elix-wordmark.svg dist/icons/",
+  "outputDirectory": "dist"
+}
