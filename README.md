@@ -12,9 +12,9 @@ Working Manifest V3 BYOK prototype.
 2. Enable **Developer mode**
 3. Click **Load unpacked**
 4. Select this folder (`ELIX`)
-5. Highlight text on any normal webpage and click **ELIX**. The gear holds the API key, model, and image capture. The first visit asks for the key there.
+5. Open **ELIX** in the Chrome toolbar and click **Add an API key**. Enter your key in Chrome’s popup, then click **Add my key**. Highlight text on any normal webpage and click the in-page **ELIX** button.
 6. It explains at the saved level (5 until you pick another age or persona). That choice is remembered.
-7. Turn on **Images** from the gear to explain a region of an image, video, or canvas. Hover the media, click **ELIX**, and drag a rectangle over the frozen screenshot. Press Escape to cancel; very small selections can be redrawn.
+7. To explain a region of an image, video, or canvas, open **Settings** in the toolbar popup and turn on **Media input (alpha)**. Hover over the media, click **ELIX**, and drag a rectangle over the frozen screenshot. Press Escape to cancel; very small selections can be redrawn.
 
 After updating an existing installation, reload the extension and the webpage. This version requests `<all_urls>` host access so the in-page button can capture the visible tab. Only the selected crop is sent to OpenAI; the full screenshot stays local and is discarded after cropping. The model list is limited to recent models that accept text and images.
 
@@ -37,9 +37,13 @@ The chip only appears when the page exposes a normal HTML selection (`window.get
 
 ## Notes
 
-- Key is stored in `chrome.storage.sync` and used only in the service worker
+- The API key is stored in `chrome.storage.sync`. Enter or edit it in Chrome’s native popup. The in-page settings display only a masked abbreviation, and the service worker sends API requests.
 - Explanations are sent to OpenAI Chat Completions
+
+## Development
+
+Run `npm ci` to install dependencies and `npm run build` after editing the MaxOS age selector, toolbar popup, or their dependencies. Include the regenerated bundles so the extension can still load directly from this folder.
 
 ## Capture Checks
 
-With Node.js and Playwright installed, run `node tests/media-capture.cjs` for browser interaction and request checks. These use mocked Chrome APIs and never send an API request. Actual Chrome permission grants and protected video capture still need a manual extension smoke test.
+After `npm ci` and `npx playwright install chromium`, run `npm test` for browser interaction and request checks. These use mocked Chrome APIs and never send an API request. Actual Chrome permission grants and protected video capture still need a manual extension smoke test.

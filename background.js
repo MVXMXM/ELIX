@@ -248,7 +248,56 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+// Only a toolbar click can authorize an embedded settings document.
+const panelTokens = new Map();
+const PANEL_PATH = "popup/popup.html";
+const API_KEY_PATH = "popup/api-key.html";
+
+async function openNativePopup(tab, popup) {
+  try {
+    await chrome.action.setPopup({ tabId: tab.id, popup });
+    await chrome.action.openPopup({ windowId: tab.windowId });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await chrome.action.setPopup({ tabId: tab.id, popup: "" }).catch(() => {});
+  }
+}
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "ELIX_AUTHORIZE_PANEL") {
+    const tabId = sender.tab?.id;
+    const authorized = Boolean(sender.frameId) &&
+      sender.origin === chrome.runtime.getURL("").slice(0, -1) &&
+      typeof message.token === "string" && panelTokens.get(tabId) === message.token;
+    if (authorized) panelTokens.delete(tabId);
+    sendResponse(authorized);
+    return;
+  }
+
+  if (message?.type === "ELIX_API_KEY_STATUS" || message?.type === "ELIX_OPEN_API_KEY") {
+    if (sender.url?.split("#", 1)[0] !== chrome.runtime.getURL(PANEL_PATH)) return;
+    if (message.type === "ELIX_API_KEY_STATUS") {
+      chrome.storage.sync.get({ apiKey: "" })
+        .then(({ apiKey }) => {
+          const key = String(apiKey || "").trim();
+          if (!key) {
+            sendResponse(null);
+            return;
+          }
+          const prefix = key.startsWith("sk-") ? "sk-" : "";
+          const suffix = key.length >= 8 ? key.slice(-4) : "";
+          sendResponse(`${prefix}...${suffix}`);
+        })
+        .catch(() => sendResponse(null));
+    } else {
+      if (!sender.tab?.active) return;
+      const path = message.remove === true ? `${API_KEY_PATH}?remove=1` : API_KEY_PATH;
+      openNativePopup(sender.tab, path).then(sendResponse);
+    }
+    return true;
+  }
+
   if (message?.type === "ELIX_CAPTURE") {
     (async () => {
       const settings = await getSettings();
@@ -266,8 +315,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-chrome.action.onClicked.addListener((tab) => {
-  if (!tab?.id) return;
-  const send = chrome.tabs.sendMessage(tab.id, { type: "ELIX_OPEN_SETTINGS" });
-  if (send?.catch) send.catch(() => {});
+chrome.action.onClicked.addListener(async (tab) => {
+  if (tab?.id === undefined) return;
+
+  const token = crypto.randomUUID();
+  panelTokens.set(tab.id, token);
+  try {
+    const shown = await chrome.tabs.sendMessage(tab.id, { type: "ELIX_TOGGLE_PANEL", token }, { frameId: 0 });
+    if (shown) return;
+  } catch {
+    // Chrome pages and tabs that predate the content script need the native popup.
+  } finally {
+    if (panelTokens.get(tab.id) === token) panelTokens.delete(tab.id);
+  }
+
+  await openNativePopup(tab, PANEL_PATH);
 });

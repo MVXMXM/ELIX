@@ -1,11 +1,10 @@
 (() => {
   const HOST_ID = "elix-root";
-  const version = chrome.runtime.getManifest().version;
   const LEVELS = ["5", "10", "15", "20"];
-  const MODELS = ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"];
   const DEFAULT_LEVEL = "5";
-  const DEFAULT_MODEL = "gpt-6-luna";
+  const MISSING_API_KEY = "API key required. Open ELIX in the Chrome toolbar to add it.";
   const OVERLAY_FADE_MS = 220;
+  const LOADER_FADE_MS = 150;
   // In-page highlight menus mount after mouseup; wait before placing the chip.
   const MENU_WAIT_MS = 220;
   const MENU_LATE_MS = 180;
@@ -24,6 +23,8 @@
   let host = null;
   let shadow = null;
   let promptBar = null;
+  let renderAgeSelector;
+  let selectedLevel = "";
   let output = null;
   let scrim = null;
   let veil = null;
@@ -57,9 +58,9 @@
     bodyPaddingInlineEnd: "",
   };
   let explainPort = null;
+  let loaderExit = null;
   let overlayFadeTimer = null;
   let explainDefaults = { defaultLevel: DEFAULT_LEVEL, defaultFreeform: "" };
-  let settingsState = { apiKey: "", model: DEFAULT_MODEL, mediaEnabled: false };
   let hasApiKey = false;
 
   function isEventFromUi(event) {
@@ -74,16 +75,6 @@
 
   function isTipOpen() {
     return Boolean(tip && !tip.classList.contains("hidden"));
-  }
-
-  function overlayField(event) {
-    if (!promptBar) return null;
-    const path = typeof event.composedPath === "function" ? event.composedPath() : [];
-    const fromPath = path.find((node) => node instanceof Element && node.matches("input, select, textarea"));
-    const active = shadow?.activeElement;
-    const field = fromPath || (active instanceof Element && active.matches("input, select, textarea") ? active : null);
-    if (!field || !promptBar.contains(field)) return null;
-    return field;
   }
 
   function isOtherInputEvent(event) {
@@ -125,10 +116,6 @@
         cancelMediaCapture();
         return;
       }
-      if (settingsEl()?.classList.contains("open")) {
-        setSettingsOpen(false);
-        return;
-      }
       hideOverlay();
       return;
     }
@@ -139,9 +126,6 @@
     if (event.isComposing || event.keyCode === 229) {
       return;
     }
-
-    const field = overlayField(event);
-    if (field && !field.matches(".other input")) return;
 
     // Enter and Space are composed, so a page capture listener would act on
     // them before the Other field's own handler runs.
@@ -162,6 +146,11 @@
       if (event.type === "keydown") {
         insertOtherSpace();
       }
+      return;
+    }
+
+    if (event.key === " " && shadow?.activeElement?.matches(".age-selector button")) {
+      event.stopImmediatePropagation();
       return;
     }
 
@@ -270,45 +259,7 @@
     window.scrollTo(savedScrollX, savedScrollY);
   }
 
-  // Disc faces have to live on the document. Shadow-root @font-face does not load.
-  function ensureMaskFont() {
-    if (document.getElementById("elix-mask-font")) return;
-    const style = document.createElement("style");
-    style.id = "elix-mask-font";
-    style.textContent = `
-@font-face {
-  font-family: "elix-mask-0";
-  src: url("data:font/woff;base64,d09GRgABAAAAAAMMAAoAAAABAxgAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAABPUy8yAAABZAAAAEIAAABgN2fOmGNtYXAAAAGwAAAAdQABABJACMAWZ2x5ZgAAAjAAAAAsAAAALGiZgT1oZWFkAAAA9AAAADYAAAA2Lq5o/mhoZWEAAAEsAAAAHwAAACQEgADeaG10eAAAAagAAAAGAAAABgGkAABsb2NhAAACKAAAAAYAAAAGABYAAG1heHAAAAFMAAAAFgAAACAABAAObmFtZQAAAlwAAAChAAABICk2MOlwb3N0AAADAAAAAAwAAAAgAAMAAAABAAAAAQAAKTRGU18PPPUAAwPoAAAAAOcdEuMAAAAA5x0S4wBGAMMBGAGVAAAAAwACAAAAAAAAeJxjYGRgYFb4b8HAwBjH4MbgxijBABRBAYwAP/8CYgB4nGNgZGBgYGLgYQDRIBYaAAAB2gATAAB4nGNgYYxjnMDAykAQ/P///r/G/f//H4j/P8DAzsBvDwQMBxgY6t8xK/y3YGBgVmA4AVPL+IVpD5BSYGAAAN4gEfgAAAFeAAAARgAAeJztyAENgDAQA8AOJgG/OEYCoyCDXC7fpp9kS7L3jub4eq67Pav7vNbqypejvzcBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD4vQe8xIeZAAAAAAAAAAAWAAAAAQBGAMMBGAGVAAsAABMyFhUUBiMiJjU0Nq8rPj4rKz4+AZU+Kys+PisrPnicbY5LCsIwFEVPvyKoqENH1XlLugNX4KCDzjMIpfQnKYWuxPWa1CBFfA8e534CAXa88LDjsV2uHZ+NUR8OVn7IiaPjiD1Xx/HSCfBC++pM5tjnwN1xsPJDbjwcR1x4Oo5tR7X1nHZybApVTa3UX504o1R6rIc+yTMhBIqWmpmUDslIQ2G8isn4Ev0nT34apVHaJDUDvUlz809h9w3HICVZAAAAeJxjYGbACwAAfQAE") format("woff");
-  font-weight: 400;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: "elix-mask-1";
-  src: url("data:font/woff;base64,d09GRgABAAAAAAMIAAoAAAABAxgAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAABPUy8yAAABZAAAAD8AAABg2dhpK2NtYXAAAAGsAAAAdwABABK/+EAFZ2x5ZgAAAiwAAAAsAAAALGiZgT1oZWFkAAAA9AAAADYAAAA2Lq5o/mhoZWEAAAEsAAAAHwAAACQEgADeaG10eAAAAaQAAAAGAAAABgGkAABsb2NhAAACJAAAAAYAAAAGABYAAG1heHAAAAFMAAAAFgAAACAABAAObmFtZQAAAlgAAAChAAABICk2MOlwb3N0AAAC/AAAAAwAAAAgAAMAAAABAAAAAQAA5HQRT18PPPUAAwPoAAAAAOcdEuMAAAAA5x0S4wBGAMMBGAGVAAAAAwACAAAAAAAAeJxjYGRgYFb4b8HAwBjH4MbgxijBABRBAYwAP/8CYgB4nGNgZGBgYGLgYQDRIBYaAAAB2gATAAB4nGNgYYxjnMDAykAQKDAIKfxWYGDg4GCQZ6hgELAHAoYD9e//32VW+G/BwMCswHACppbxC9MesBYGAKLDDDwAAV4AAABGAAB4nO3HAQ2AMBADwAKTgF+UTgMOeJ7JIJdL2zTJnuTonN3b2lFP72j9a1Yl1/11/7EaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACA33sBsXWJdgAAAAAAABYAAAABAEYAwwEYAZUACwAAEzIWFRQGIyImNTQ2rys+PisrPj4BlT4rKz4+Kys+eJxtjksKwjAURU+/IqioQ0fVeUu6A1fgoIPOMwil9Ccpha7E9ZrUIEV8Dx7nfgIBdrzwsOOxXa4dn41RHw5WfsiJo+OIPVfH8dIJ8EL76kzm2OfA3XGw8kNuPBxHXHg6jm1HtfWcdnJsClVNrdRfnTijVHqshz7JMyEEipaamZQOyUhDYbyKyfgS/SdPfhqlUdokNQO9SXPzT2H3DccgJVkAAAB4nGNgZsALAAB9AAQ=") format("woff");
-  font-weight: 400;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: "elix-mask-2";
-  src: url("data:font/woff;base64,d09GRgABAAAAAAK0AAoAAAAAA3wAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAABPUy8yAAABZAAAADQAAABgR6dFrWNtYXAAAAGgAAAAMAAAAHb//wCkZ2x5ZgAAAdgAAAAsAAAALGiZgT1oZWFkAAAA9AAAADYAAAA2Lq5o/mhoZWEAAAEsAAAAHwAAACQEgADeaG10eAAAAZgAAAAGAAAABgGkAABsb2NhAAAB0AAAAAYAAAAGABYAAG1heHAAAAFMAAAAFgAAACAABAAObmFtZQAAAgQAAAChAAABICk2MOlwb3N0AAACqAAAAAwAAAAgAAMAAAABAAAAAQAAiM3VGV8PPPUAAwPoAAAAAOcdEuMAAAAA5x0S4wBGAMMBGAGVAAAAAwACAAAAAAAAeJxjYGRgYFb4b8HAwBjH4MbgxijBABRBAYwAP/8CYgB4nGNgZGBgYGLgYQDRIBYaAAAB2gATAAB4nGNgYYxjnMDAykAKMAAR9kDAcOD/vf//mRX+WzAwMCswnIApYPzCtAdIKTAwAABW+wrZAV4AAABGAAB4nGNgYGBiYGBgBmIRIMkIplkYkoA0CxAC+f///f8PJO+BSKBaFiDJSCkEALKxCJ4AAAAAABYAAAABAEYAwwEYAZUACwAAEzIWFRQGIyImNTQ2rys+PisrPj4BlT4rKz4+Kys+eJxtjksKwjAURU+/IqioQ0fVeUu6A1fgoIPOMwil9Ccpha7E9ZrUIEV8Dx7nfgIBdrzwsOOxXa4dn41RHw5WfsiJo+OIPVfH8dIJ8EL76kzm2OfA3XGw8kNuPBxHXHg6jm1HtfWcdnJsClVNrdRfnTijVHqshz7JMyEEipaamZQOyUhDYbyKyfgS/SdPfhqlUdokNQO9SXPzT2H3DccgJVkAAAB4nGNgZsALAAB9AAQ=") format("woff");
-  font-weight: 400;
-  font-style: normal;
-  font-display: block;
-}
-`;
-    (document.head || document.documentElement).appendChild(style);
-    const fonts = document.fonts;
-    if (fonts && fonts.load) {
-      fonts.load('12px "elix-mask-0"', " ");
-      fonts.load('12px "elix-mask-1"', "\u8000");
-      fonts.load('12px "elix-mask-2"', "\uFFDE");
-    }
-  }
-
   function ensureUi() {
-    ensureMaskFont();
     if (host && document.documentElement.contains(host)) {
       return;
     }
@@ -326,6 +277,20 @@
     shadow = host.attachShadow({ mode: "open" });
     shadow.innerHTML = `
       <style>
+        :host {
+          --font-archivo: "ELIX Archivo";
+          --font-inter: "ELIX Inter";
+          --font-sans: var(--font-archivo), sans-serif;
+          --surface: #fcfcfc;
+          --background-alt: #f1f5f9;
+          --hairline: #e2e8f0;
+          --border: #cad5e2;
+          --muted: #62748e;
+          --foreground: #0f172b;
+          --slate-950: #020618;
+          --accent: #00bbff;
+        }
+
         :host, * { box-sizing: border-box; }
 
         .scrim {
@@ -368,7 +333,7 @@
 
         .mark {
           position: fixed;
-          background: rgba(232, 196, 104, 0.5);
+          background: color-mix(in srgb, var(--accent) 28%, transparent);
         }
 
         .focus-catcher {
@@ -380,8 +345,8 @@
         .output {
           position: fixed;
           z-index: 1;
-          color: #111;
-          font: 14px/1.4 "IBM Plex Sans", "Segoe UI", sans-serif;
+          color: var(--foreground);
+          font: 14px/1.4 var(--font-sans);
           opacity: 0;
           transform: translateY(4px);
           transition:
@@ -405,8 +370,8 @@
 
         .prompt {
           margin: 0;
-          color: #111;
-          font: 600 14px/1.3 "IBM Plex Sans", "Segoe UI", sans-serif;
+          color: var(--foreground);
+          font: 600 14px/1.3 var(--font-sans);
         }
 
         .choices {
@@ -428,20 +393,17 @@
           visibility: hidden;
         }
 
-        button.level {
-          appearance: none;
-          border: 1px solid rgba(17, 17, 17, 0.22);
-          background: rgba(255, 255, 255, 0.55);
-          color: #111;
-          border-radius: 999px;
-          padding: 6px 10px;
-          font: 600 12px/1 "IBM Plex Sans", "Segoe UI", sans-serif;
-          cursor: pointer;
+        .levels .age-selector .segmented-controller {
+          gap: 2px;
+          padding: 2px;
         }
 
-        button.level:hover {
-          background: rgba(17, 17, 17, 0.06);
-          border-color: #111;
+        .age-selector .segmented-controller :is(.segmented-controller-button, .segmented-controller-label) {
+          padding: 5px 8px;
+        }
+
+        .age-selector .segmented-controller:not(:has(button[aria-pressed="true"])) .segmented-controller-indicator {
+          visibility: hidden;
         }
 
         button.icon {
@@ -452,36 +414,28 @@
           width: 26px;
           height: 26px;
           padding: 0;
-          border: 1px solid rgba(17, 17, 17, 0.22);
+          border: 1px solid var(--border);
           border-radius: 999px;
-          background: rgba(255, 255, 255, 0.55);
-          color: #111;
+          background: var(--surface);
+          color: var(--foreground);
           cursor: pointer;
           flex: none;
         }
 
         button.icon:hover {
-          background: rgba(17, 17, 17, 0.06);
-          border-color: #111;
+          background: var(--background-alt);
+          border-color: var(--foreground);
         }
 
         button.icon:focus-visible {
-          outline: 2px solid #111;
+          outline: 2px solid var(--foreground);
           outline-offset: 2px;
         }
 
-        button.level[aria-pressed="true"] {
-          background: #111;
-          color: #fff;
-          border-color: #111;
-        }
-
-        button.level[aria-pressed="true"]:hover {
-          background: #222;
-        }
-
-        button.level[data-action="other"] {
-          max-width: min(11rem, calc(100vw - 15.5rem));
+        .persona-segment-label {
+          /* The indicator uses rounded button dimensions. Keep both text boxes the same width. */
+          flex: none;
+          max-width: clamp(48px, calc(100vw - 174px), 11rem);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -497,150 +451,53 @@
 
         .other.open { display: flex; }
 
-        .settings {
-          display: none;
-          position: fixed;
-          z-index: 2;
-          flex-direction: column;
-          gap: 8px;
-          width: min(220px, calc(100vw - 16px));
-          padding: 10px;
-          border: 1px solid rgba(17, 17, 17, 0.14);
-          border-radius: 14px;
-          background: rgba(255, 255, 255, 0.9);
-          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
-          color: #111;
-        }
-
-        .settings.open { display: flex; }
-
-        .settings-top {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-          margin: -2px -2px 0;
-        }
-
-        .settings-version {
-          margin: 0;
-          color: rgba(17, 17, 17, 0.45);
-          font: 600 11px/1 "IBM Plex Mono", ui-monospace, monospace;
-          letter-spacing: 0.04em;
-        }
-
-        .settings button.icon {
-          width: 22px;
-          height: 22px;
-        }
-
-        .setting {
-          display: flex;
-          flex-direction: column;
-          align-items: stretch;
-          gap: 4px;
-          min-width: 0;
-          color: #111;
-          font: 600 12px/1 "IBM Plex Sans", "Segoe UI", sans-serif;
-        }
-
-        .settings input,
-        .settings select {
-          width: 100%;
-          height: 32px;
-          min-width: 0;
-          box-sizing: border-box;
-          border-radius: 10px;
-          border: 1px solid rgba(17, 17, 17, 0.22);
-          background: rgba(255, 255, 255, 0.72);
-          color: #111;
-          font: 12px/1.3 "IBM Plex Sans", "Segoe UI", sans-serif;
-        }
-
-        .settings input {
-          padding: 0 10px;
-        }
-
-        /* Disc font keeps the key hidden without the password autofill popover. */
-        .settings input[name="apiKey"]:not(:placeholder-shown) {
-          font-family: "elix-mask-0", "elix-mask-1", "elix-mask-2";
-          font-synthesis: none;
-          caret-color: #111;
-        }
-
-        .settings select {
-          padding: 0 28px 0 10px;
-          appearance: none;
-          cursor: pointer;
-          background-color: rgba(255, 255, 255, 0.72);
-          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23111' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M2.5 4.5 6 8l3.5-3.5'/%3E%3C/svg%3E");
-          background-repeat: no-repeat;
-          background-position: right 8px center;
-        }
-
-        .settings input::placeholder {
-          color: rgba(17, 17, 17, 0.45);
-        }
-
-        .check {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          color: #111;
-          font: 600 12px/1 "IBM Plex Sans", "Segoe UI", sans-serif;
-          cursor: pointer;
-        }
-
-        .check input {
-          flex: none;
-          width: 14px;
-          height: 14px;
-          margin: 0;
-          padding: 0;
-          border: 0;
-          border-radius: 2px;
-          background: transparent;
-          accent-color: #111;
-        }
-
         .other input {
           flex: 1 1 auto;
           width: 0;
           height: 26px;
           min-width: 0;
           border-radius: 999px;
-          border: 1px solid rgba(17, 17, 17, 0.22);
-          background: rgba(255, 255, 255, 0.72);
-          color: #111;
+          border: 1px solid var(--border);
+          background: var(--surface);
+          color: var(--foreground);
           padding: 0 10px;
-          font: 12px/1.3 "IBM Plex Sans", "Segoe UI", sans-serif;
+          font: 12px/1.3 var(--font-sans);
           text-overflow: ellipsis;
         }
 
         .other input::placeholder {
-          color: rgba(17, 17, 17, 0.45);
+          color: var(--muted);
         }
 
         .output {
           max-width: min(420px, calc(100vw - 24px));
           max-height: min(48vh, 420px);
           overflow: auto;
-          font: 15px/1.5 "IBM Plex Sans", "Segoe UI", sans-serif;
+          font: 16px/1.75 var(--font-sans);
         }
 
-        .result, .error, .status {
+        .result, .error {
           white-space: pre-wrap;
         }
 
+        .result { font: 400 16px/26px "ELIX Inter", var(--font-sans); }
         .error { color: #b42318; }
-        .status { color: rgba(17, 17, 17, 0.5); }
-        .result { color: #111; }
+        @media (prefers-reduced-motion: no-preference) {
+          .status:not(.hidden), .result:not(.hidden) {
+            animation: elix-output-in ${LOADER_FADE_MS}ms ease-out;
+          }
+        }
+
+        @keyframes elix-output-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
 
         .tip {
           position: fixed;
           appearance: none;
           border: 1px solid transparent;
-          background: #00bbff;
+          background: var(--accent);
           color: #fff;
           padding: 7px 10px;
           border-radius: 999px;
@@ -660,7 +517,7 @@
         }
 
         .tip:focus-visible {
-          outline: 2px solid #0f172b;
+          outline: 2px solid var(--foreground);
           outline-offset: 2px;
         }
 
@@ -702,7 +559,7 @@
       <div class="prompt-bar hidden">
         <p class="prompt">Explain like I'm…</p>
         <div class="choices">
-          <div class="levels"></div>
+          <div class="levels"><div class="age-selector"></div></div>
           <div class="other">
             <input type="text" aria-label="Persona or audience" placeholder="e.g. French / a cat / a tired parent" />
             <button type="button" class="icon" data-action="accept-other" aria-label="Accept">
@@ -723,32 +580,6 @@
         <div class="result hidden"></div>
         <div class="error hidden"></div>
       </div>
-      <div class="settings">
-        <div class="settings-top">
-          <p class="settings-version">v${version}</p>
-          <button type="button" class="icon" data-action="close-settings" aria-label="Close">
-            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
-              <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M4 4l8 8M12 4l-8 8"/>
-            </svg>
-          </button>
-        </div>
-        <label class="setting">
-          <span>API key</span>
-          <input type="text" name="apiKey" aria-label="API key" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="sk-..." />
-        </label>
-        <label class="setting">
-          <span>Model</span>
-          <select name="model" aria-label="Model">
-            <option value="gpt-6-luna">GPT-6 Luna</option>
-            <option value="gpt-6.1-terra">GPT-6.1 Terra</option>
-            <option value="gpt-6.1-sol">GPT-6.1 Sol</option>
-          </select>
-        </label>
-        <label class="check">
-          <input type="checkbox" name="mediaEnabled" />
-          <span>Images</span>
-        </label>
-      </div>
     `;
 
     scrim = shadow.querySelector(".scrim");
@@ -761,38 +592,9 @@
 
     const levels = shadow.querySelector(".levels");
 
-    for (const level of LEVELS) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "level";
-      button.textContent = level;
-      button.dataset.level = level;
-      button.setAttribute("aria-pressed", "false");
-      levels.appendChild(button);
-    }
-
-    const otherBtn = document.createElement("button");
-    otherBtn.type = "button";
-    otherBtn.className = "level";
-    otherBtn.textContent = "Other";
-    otherBtn.dataset.action = "other";
-    otherBtn.setAttribute("aria-pressed", "false");
-    otherBtn.setAttribute("aria-expanded", "false");
-    levels.appendChild(otherBtn);
-
-    const gear = document.createElement("button");
-    gear.type = "button";
-    gear.className = "icon";
-    gear.dataset.action = "open-settings";
-    gear.setAttribute("aria-label", "Settings");
-    gear.setAttribute("aria-expanded", "false");
-    gear.innerHTML =
-      '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">' +
-      '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-      '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>' +
-      '<circle cx="12" cy="12" r="3"/>' +
-      "</g></svg>";
-    levels.appendChild(gear);
+    ElixAgeSelector.mountLoader(output.querySelector(".status"));
+    renderAgeSelector = ElixAgeSelector.mount(levels.querySelector(".age-selector"), LEVELS, onLevelChange);
+    syncAgeSelector();
 
     scrim.addEventListener("mousedown", (event) => {
       event.preventDefault();
@@ -823,10 +625,6 @@
     }
 
     const otherInput = promptBar.querySelector(".other input");
-    const settings = shadow.querySelector(".settings");
-    const keyInput = settings.querySelector('input[name="apiKey"]');
-    const modelSelect = settings.querySelector('select[name="model"]');
-    const mediaInput = settings.querySelector('input[name="mediaEnabled"]');
     otherInput.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) {
         return;
@@ -843,26 +641,6 @@
     otherInput.addEventListener("mousedown", (event) => {
       event.stopPropagation();
     });
-    settings.addEventListener("mousedown", (event) => {
-      event.stopPropagation();
-      if (!event.target.closest("input, select, textarea")) event.preventDefault();
-    });
-    settings.addEventListener("click", onPromptClick);
-    keyInput.addEventListener("focus", () => pinScroll());
-    keyInput.addEventListener("change", commitApiKey);
-    keyInput.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) return;
-      event.preventDefault();
-      event.stopPropagation();
-      commitApiKey();
-    });
-    modelSelect.addEventListener("change", () => {
-      persistSettings({ model: supportedModel(modelSelect.value) });
-    });
-    mediaInput.addEventListener("change", () => {
-      persistSettings({ mediaEnabled: mediaInput.checked });
-    });
-
     tip.addEventListener("mousedown", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -985,39 +763,54 @@
     el.classList.add("open");
   }
 
-  function showStatus(text) {
-    const status = output.querySelector(".status");
-    const result = output.querySelector(".result");
-    const error = output.querySelector(".error");
-    status.textContent = text || "";
-    status.classList.toggle("hidden", !text);
-    result.classList.add("hidden");
-    error.classList.add("hidden");
-    if (text) {
-      fadeOpen(output);
-    } else {
-      output.classList.remove("open");
-      output.classList.add("hidden");
-    }
+  function cancelLoaderExit() {
+    loaderExit?.cancel();
+    loaderExit = null;
+  }
+
+  function hideLoader() {
+    cancelLoaderExit();
+    output.querySelector(".status").classList.add("hidden");
+  }
+
+  function showLoader() {
+    cancelLoaderExit();
+    output.querySelector(".status").classList.remove("hidden");
+    output.querySelector(".result").classList.add("hidden");
+    output.querySelector(".error").classList.add("hidden");
+    fadeOpen(output);
   }
 
   function showResult(text) {
     const status = output.querySelector(".status");
     const result = output.querySelector(".result");
-    const error = output.querySelector(".error");
-    fadeOpen(output);
-    status.classList.add("hidden");
-    error.classList.add("hidden");
     result.textContent = text;
-    result.classList.toggle("hidden", !text);
+    if (loaderExit) return;
+    if (status.classList.contains("hidden") || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      hideLoader();
+      result.classList.remove("hidden");
+      return;
+    }
+
+    // Leave the result hidden during the fade, but keep appending incoming text.
+    const exit = status.animate([{ opacity: getComputedStyle(status).opacity }, { opacity: 0 }], {
+      duration: LOADER_FADE_MS,
+      easing: "ease-in",
+      fill: "forwards",
+    });
+    loaderExit = exit;
+    exit.onfinish = () => {
+      if (loaderExit !== exit) return;
+      hideLoader();
+      result.classList.remove("hidden");
+    };
   }
 
   function showError(text) {
-    const status = output.querySelector(".status");
     const result = output.querySelector(".result");
     const error = output.querySelector(".error");
     fadeOpen(output);
-    status.classList.add("hidden");
+    hideLoader();
     result.classList.add("hidden");
     error.textContent = text;
     error.classList.remove("hidden");
@@ -1036,7 +829,7 @@
 
   function requestExplain(level, freeform) {
     if (!hasApiKey) {
-      setSettingsOpen(true);
+      showError(MISSING_API_KEY);
       return;
     }
 
@@ -1047,7 +840,7 @@
 
     abortExplain();
     output.querySelector(".result").textContent = "";
-    showStatus("Thinking…");
+    showLoader();
 
     let port;
     try {
@@ -1065,7 +858,7 @@
 
       if (message.type === "chunk") {
         explanation += message.text;
-        showResult(explanation);
+        if (explanation.trim()) showResult(explanation);
         return;
       }
 
@@ -1097,7 +890,7 @@
       if (port !== explainPort) return;
       explainPort = null;
       const err = chrome.runtime.lastError?.message;
-      if (err) showError(err);
+      if (err || !explanation.trim()) showError(err || "The response was interrupted. Try again.");
     });
 
     port.postMessage({
@@ -1114,13 +907,8 @@
 
   function markSelectedLevel(level) {
     if (!promptBar) return;
-    const current = normalizeLevel(level);
-    promptBar.querySelectorAll("button.level").forEach((button) => {
-      const selected =
-        button.dataset.level === current ||
-        (current === "other" && button.dataset.action === "other");
-      button.setAttribute("aria-pressed", selected ? "true" : "false");
-    });
+    selectedLevel = normalizeLevel(level);
+    syncAgeSelector();
   }
 
   async function refreshExplainDefaults() {
@@ -1129,20 +917,14 @@
         defaultLevel: DEFAULT_LEVEL,
         defaultFreeform: "",
         apiKey: "",
-        model: DEFAULT_MODEL,
         mediaEnabled: false,
       });
       explainDefaults = {
         defaultLevel: normalizeLevel(stored.defaultLevel),
         defaultFreeform: String(stored.defaultFreeform || ""),
       };
-      settingsState = {
-        apiKey: String(stored.apiKey || ""),
-        model: supportedModel(stored.model),
-        mediaEnabled: stored.mediaEnabled === true,
-      };
-      setMediaEnabled(settingsState.mediaEnabled);
-      hasApiKey = Boolean(settingsState.apiKey.trim());
+      setMediaEnabled(stored.mediaEnabled);
+      hasApiKey = Boolean(String(stored.apiKey || "").trim());
     } catch {
       // Keep the in-memory default if extension storage is unavailable.
     }
@@ -1152,33 +934,18 @@
     }
   }
 
-  function supportedModel(model) {
-    return MODELS.includes(model) ? model : DEFAULT_MODEL;
-  }
-
-  function persistSettings(partial) {
-    Object.assign(settingsState, partial);
-    if (Object.prototype.hasOwnProperty.call(partial, "apiKey")) {
-      hasApiKey = Boolean(String(partial.apiKey || "").trim());
-    }
-    if (Object.prototype.hasOwnProperty.call(partial, "mediaEnabled")) {
-      setMediaEnabled(partial.mediaEnabled);
-    }
-    const write = chrome.storage?.sync?.set?.(partial);
-    if (write?.catch) write.catch(() => {});
-  }
-
   function savedPersona() {
     return String(explainDefaults.defaultFreeform || "").trim();
   }
 
-  function syncOtherPill() {
-    const button = promptBar?.querySelector('button[data-action="other"]');
-    if (!button) return;
-    const label = savedPersona();
-    button.textContent = label || "Other";
-    if (label) button.title = label;
-    else button.removeAttribute("title");
+  function otherSegment() {
+    return promptBar?.querySelector(".age-selector button[aria-expanded]");
+  }
+
+  function syncAgeSelector() {
+    if (!renderAgeSelector) return;
+    const expanded = promptBar.querySelector(".other").classList.contains("open");
+    renderAgeSelector(selectedLevel, savedPersona(), expanded);
   }
 
   function saveLevel(level, freeform) {
@@ -1188,7 +955,7 @@
       explainDefaults = { defaultLevel: "other", defaultFreeform: persona };
       const write = chrome.storage?.sync?.set?.({ defaultLevel: "other", defaultFreeform: persona });
       if (write?.catch) write.catch(() => {});
-      syncOtherPill();
+      syncAgeSelector();
       return;
     }
     explainDefaults = { ...explainDefaults, defaultLevel: normalized };
@@ -1197,8 +964,7 @@
   }
 
   function clearOther() {
-    const button = promptBar?.querySelector('button[data-action="other"]');
-    const wasSelected = button?.getAttribute("aria-pressed") === "true";
+    if (selectedLevel === "other") selectedLevel = "";
     explainDefaults = { ...explainDefaults, defaultFreeform: "" };
     const patch = { defaultFreeform: "" };
     if (explainDefaults.defaultLevel === "other") {
@@ -1207,108 +973,20 @@
     }
     const write = chrome.storage?.sync?.set?.(patch);
     if (write?.catch) write.catch(() => {});
-    syncOtherPill();
-    if (wasSelected) button?.setAttribute("aria-pressed", "false");
     setOtherOpen(false);
-    button?.focus({ preventScroll: true });
-  }
-
-  function fillSettingsForm() {
-    const settings = settingsEl();
-    if (!settings) return;
-    settings.querySelector('input[name="apiKey"]').value = settingsState.apiKey;
-    settings.querySelector('select[name="model"]').value = supportedModel(settingsState.model);
-    settings.querySelector('input[name="mediaEnabled"]').checked = settingsState.mediaEnabled === true;
-  }
-
-  function commitApiKey() {
-    const input = settingsEl()?.querySelector('input[name="apiKey"]');
-    if (!input) return;
-    const next = input.value.trim();
-    if (next === settingsState.apiKey) return;
-    const becameReady = Boolean(next) && !hasApiKey;
-    persistSettings({ apiKey: next });
-    if (!isOverlayOpen()) return;
-    if (becameReady) {
-      setSettingsOpen(false);
-      startDefaultExplain();
-    } else if (!hasApiKey) {
-      setSettingsOpen(true);
-    }
-  }
-
-  function settingsEl() {
-    return shadow?.querySelector(".settings") || null;
-  }
-
-  function syncPromptControls() {
-    if (!promptBar) return;
-    const otherOn = promptBar.querySelector(".other").classList.contains("open");
-    const otherBtn = promptBar.querySelector('button[data-action="other"]');
-    if (otherBtn) otherBtn.setAttribute("aria-expanded", otherOn ? "true" : "false");
-    const gear = promptBar.querySelector('button[data-action="open-settings"]');
-    if (gear) gear.setAttribute("aria-expanded", settingsEl()?.classList.contains("open") ? "true" : "false");
-  }
-
-  function placeSettingsBar() {
-    if (!promptBar) return;
-    promptBar.style.maxWidth = `${Math.min(560, window.innerWidth - VIEW_MARGIN * 2)}px`;
-    const barWidth = promptBar.offsetWidth;
-    const left = Math.max(VIEW_MARGIN, Math.round((window.innerWidth - barWidth) / 2));
-    promptBar.style.top = `${VIEW_MARGIN + 16}px`;
-    promptBar.style.left = `${left}px`;
-    placeSettingsPopper();
-  }
-
-  function placeSettingsPopper() {
-    const settings = settingsEl();
-    const gear = promptBar?.querySelector('button[data-action="open-settings"]');
-    if (!settings?.classList.contains("open") || !gear) return;
-    const gap = 8;
-    const margin = VIEW_MARGIN;
-    const gearRect = gear.getBoundingClientRect();
-    const panelWidth = settings.offsetWidth;
-    const panelHeight = settings.offsetHeight;
-    const spaceBelow = window.innerHeight - gearRect.bottom - gap - margin;
-    const spaceAbove = gearRect.top - gap - margin;
-    const openAbove = panelHeight > spaceBelow && spaceAbove > spaceBelow;
-    let top = openAbove ? gearRect.top - gap - panelHeight : gearRect.bottom + gap;
-    top = Math.max(margin, Math.min(top, window.innerHeight - panelHeight - margin));
-    let left = gearRect.right - panelWidth;
-    left = Math.max(margin, Math.min(left, window.innerWidth - panelWidth - margin));
-    settings.style.top = `${Math.round(top)}px`;
-    settings.style.left = `${Math.round(left)}px`;
+    otherSegment()?.focus({ preventScroll: true });
   }
 
   function setOtherOpen(open) {
     if (!promptBar) return;
     promptBar.querySelector(".other").classList.toggle("open", open);
-    syncPromptControls();
+    syncAgeSelector();
     if (lastRect && isOverlayOpen()) positionOverlay(lastRect);
-  }
-
-  function setSettingsOpen(open) {
-    const settings = settingsEl();
-    if (!settings || !promptBar) return;
-    if (open) fillSettingsForm();
-    settings.classList.toggle("open", open);
-    syncPromptControls();
-    if (open && isOverlayOpen() && !lastRect) placeSettingsBar();
-    else if (open) placeSettingsPopper();
-    if (open) {
-      requestAnimationFrame(() => {
-        if (settings.classList.contains("open")) placeSettingsPopper();
-      });
-    }
-    if (open && !hasApiKey) {
-      queueMicrotask(() => settings.querySelector('input[name="apiKey"]').focus({ preventScroll: true }));
-    }
   }
 
   function openOtherEditor() {
     const input = promptBar.querySelector(".other input");
     input.value = savedPersona();
-    syncOtherPill();
     setOtherOpen(true);
     queueMicrotask(() => {
       input.focus({ preventScroll: true });
@@ -1317,13 +995,12 @@
   }
 
   function startDefaultExplain() {
-    syncOtherPill();
+    syncAgeSelector();
     if (!hasApiKey) {
-      setSettingsOpen(true);
+      showError(MISSING_API_KEY);
       return;
     }
 
-    setSettingsOpen(false);
     const level = normalizeLevel(explainDefaults.defaultLevel);
     markSelectedLevel(level);
 
@@ -1356,32 +1033,32 @@
     markSelectedLevel("other");
     saveLevel("other", value);
     setOtherOpen(false);
-    promptBar.querySelector('button[data-action="other"]')?.focus({ preventScroll: true });
+    otherSegment()?.focus({ preventScroll: true });
     if (changed) requestExplain("other", value);
+  }
+
+  function onLevelChange(level) {
+    if (level === "other") {
+      const saved = savedPersona();
+      if (saved && selectedLevel !== "other") {
+        markSelectedLevel("other");
+        saveLevel("other", saved);
+        requestExplain("other", saved);
+      } else {
+        openOtherEditor();
+      }
+      return;
+    }
+
+    setOtherOpen(false);
+    markSelectedLevel(level);
+    saveLevel(level, "");
+    requestExplain(level);
   }
 
   function onPromptClick(event) {
     const button = event.target.closest("button");
     if (!button) return;
-
-    if (button.dataset.action === "open-settings") {
-      setSettingsOpen(!settingsEl()?.classList.contains("open"));
-      return;
-    }
-
-    if (button.dataset.action === "other") {
-      setSettingsOpen(false);
-      const saved = savedPersona();
-      const selected = button.getAttribute("aria-pressed") === "true";
-      if (saved && !selected) {
-        markSelectedLevel("other");
-        saveLevel("other", saved);
-        requestExplain("other", saved);
-        return;
-      }
-      openOtherEditor();
-      return;
-    }
 
     if (button.dataset.action === "accept-other") {
       submitOther();
@@ -1390,26 +1067,7 @@
 
     if (button.dataset.action === "close-other") {
       setOtherOpen(false);
-      promptBar.querySelector('button[data-action="other"]')?.focus({ preventScroll: true });
-      return;
-    }
-
-    if (button.dataset.action === "close-settings") {
-      if (!hasApiKey) {
-        hideOverlay();
-        return;
-      }
-      setSettingsOpen(false);
-      promptBar.querySelector('button[data-action="open-settings"]')?.focus({ preventScroll: true });
-      return;
-    }
-
-    if (button.dataset.level) {
-      setOtherOpen(false);
-      setSettingsOpen(false);
-      markSelectedLevel(button.dataset.level);
-      saveLevel(button.dataset.level, "");
-      requestExplain(button.dataset.level);
+      otherSegment()?.focus({ preventScroll: true });
     }
   }
 
@@ -1438,7 +1096,6 @@
     output.style.top = `${Math.round(outTop)}px`;
     output.style.left = `${Math.round(barLeft)}px`;
     output.style.maxHeight = `${Math.max(80, window.innerHeight - outTop - VIEW_MARGIN)}px`;
-    placeSettingsPopper();
   }
 
   function hideTip() {
@@ -1450,6 +1107,7 @@
     if (!promptBar || promptBar.classList.contains("hidden")) return;
 
     abortExplain();
+    cancelLoaderExit();
     clearTimeout(overlayFadeTimer);
 
     scrim.classList.remove("open");
@@ -1463,13 +1121,10 @@
       focusCatcher.classList.add("hidden");
 
       promptBar.querySelector(".other").classList.remove("open");
-      settingsEl()?.classList.remove("open");
       promptBar.querySelector(".other input").value = "";
-      promptBar.querySelectorAll("button.level").forEach((button) => {
-        button.setAttribute("aria-pressed", "false");
-      });
-      syncPromptControls();
-      output.querySelector(".status").classList.add("hidden");
+      selectedLevel = "";
+      syncAgeSelector();
+      hideLoader();
       output.querySelector(".result").classList.add("hidden");
       output.querySelector(".result").textContent = "";
       output.querySelector(".error").classList.add("hidden");
@@ -2452,19 +2107,6 @@
     showTimer = setTimeout(showTipForSelection, 16);
   }
 
-  function openSettingsFromToolbar() {
-    ensureUi();
-    clearTimeout(overlayFadeTimer);
-    focusCatcher.classList.add("hidden");
-    fadeOpen(scrim);
-    fadeOpen(promptBar);
-    output.classList.remove("open");
-    output.classList.add("hidden");
-    lockScroll();
-    updateSpotlight();
-    setSettingsOpen(true);
-  }
-
   function openOverlay(imageCapture = false) {
     cancelScheduledTip();
     hideTip();
@@ -2491,9 +2133,8 @@
     lockScroll();
 
     promptBar.querySelector(".other").classList.remove("open");
-    settingsEl()?.classList.remove("open");
     promptBar.querySelector(".other input").value = "";
-    output.querySelector(".status").classList.add("hidden");
+    hideLoader();
     output.querySelector(".result").classList.add("hidden");
     output.querySelector(".result").textContent = "";
     output.querySelector(".error").classList.add("hidden");
@@ -2564,10 +2205,6 @@
       positionOverlay(lastRect);
       return;
     }
-    if (isOverlayOpen()) {
-      placeSettingsBar();
-      return;
-    }
     cancelScheduledTip();
     hideTip();
   });
@@ -2578,12 +2215,6 @@
     if (captureSession) {
       event.preventDefault();
       cancelMediaCapture();
-      return;
-    }
-
-    if (isOverlayOpen() && settingsEl()?.classList.contains("open")) {
-      event.preventDefault();
-      setSettingsOpen(false);
       return;
     }
 
@@ -2606,38 +2237,25 @@
   window.addEventListener("keyup", stopHostKeys, true);
 
   refreshExplainDefaults();
-  if (chrome.runtime?.onMessage?.addListener) {
-    chrome.runtime.onMessage.addListener((message) => {
-      if (message?.type === "ELIX_OPEN_SETTINGS") openSettingsFromToolbar();
-    });
-  }
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "sync") return;
-    if (changes.mediaEnabled && changes.mediaEnabled.newValue !== settingsState.mediaEnabled) {
-      settingsState.mediaEnabled = changes.mediaEnabled.newValue === true;
-      setMediaEnabled(settingsState.mediaEnabled);
-    }
+    if (changes.mediaEnabled) setMediaEnabled(changes.mediaEnabled.newValue);
     if (changes.defaultLevel) {
       explainDefaults.defaultLevel = normalizeLevel(changes.defaultLevel.newValue);
     }
     if (changes.defaultFreeform) {
       explainDefaults.defaultFreeform = String(changes.defaultFreeform.newValue || "");
-      syncOtherPill();
-    }
-    if (changes.model) {
-      settingsState.model = supportedModel(changes.model.newValue);
+      syncAgeSelector();
     }
     if (changes.apiKey) {
-      const key = String(changes.apiKey.newValue || "");
-      if (key === settingsState.apiKey) return;
-      settingsState.apiKey = key;
-      hasApiKey = Boolean(key.trim());
-      if (!isOverlayOpen()) return;
+      const wasReady = hasApiKey;
+      hasApiKey = Boolean(String(changes.apiKey.newValue || "").trim());
+      if (!isOverlayOpen() || wasReady === hasApiKey) return;
       if (hasApiKey) {
-        setSettingsOpen(false);
         startDefaultExplain();
       } else {
-        setSettingsOpen(true);
+        abortExplain();
+        showError(MISSING_API_KEY);
       }
     }
   });
