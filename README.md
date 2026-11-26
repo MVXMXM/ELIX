@@ -1,4 +1,4 @@
-# ELIX
+# ELIX (Explain Like I'm X)
 
 Explain anything without interrupting your flow. Simply highlight something on screen for an in-situ explanation, tailored to your mind. Calibrate explanation complexity with cues like age, e.g. ELI5 (explain like I'm 5), or any persona you choose, e.g. a physicist, a French guy, or even a cat.
 
