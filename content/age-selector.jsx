@@ -12,13 +12,18 @@ document.fonts.add(new FontFace("ELIX Inter", inter, { weight: "100 900" }));
 
 export function mount(container, levels, onChange) {
   const sheet = document.createElement("style");
-  sheet.textContent = styles + "\n" + loaderStyles;
+  sheet.textContent = styles + "\n" + loaderStyles + `
+    .age-selector .segmented-controller :is(.segmented-controller-button, .segmented-controller-label) {
+      font-weight: 400;
+    }
+  `;
   container.getRootNode().appendChild(sheet);
 
   const items = levels.map(level => ({ id: level, label: level }));
   const root = createRoot(container);
 
   return function render(value, persona, expanded) {
+    container.inert = expanded;
     const label = <span className="persona-segment-label">{persona || "Other"}</span>;
     const options = [...items, { id: "other", label, expanded }];
     flushSync(() => {
@@ -33,5 +38,5 @@ export function mount(container, levels, onChange) {
 }
 export function mountLoader(container) {
   const root = createRoot(container);
-  flushSync(() => root.render(<LLMLoader />));
+  flushSync(() => root.render(<LLMLoader>Thinking…</LLMLoader>));
 }
