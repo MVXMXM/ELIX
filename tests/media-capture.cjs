@@ -164,7 +164,11 @@ async function checkPopup(browser) {
 
 (async () => {
   await checkBackground();
-  const browser = await chromium.launch({ headless: true, executablePath: process.env.ELIX_CHROME_PATH || undefined });
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: process.env.ELIX_CHROME_PATH || undefined,
+    ignoreDefaultArgs: ["--hide-scrollbars"],
+  });
   try {
     await checkPopup(browser);
     for (const viewport of [{ width: 1200, height: 800 }, { width: 390, height: 844 }]) {
@@ -174,15 +178,16 @@ async function checkPopup(browser) {
       page.setDefaultTimeout(10000);
       const errors = [];
       page.on("pageerror", error => errors.push(error.message));
-      await page.setContent('<style>body{margin:0}canvas{display:block;margin:40px;width:280px;height:180px}p{margin:40px}</style><canvas width="560" height="360"></canvas><p>Gravity pulls objects together.</p>');
+      await page.setContent('<style>body{margin:0;min-height:200vh}::-webkit-scrollbar{width:16px}::-webkit-scrollbar-thumb{background:gray}canvas{display:block;margin:40px;width:280px;height:180px}p{margin:40px}</style><canvas width="560" height="360"></canvas><p>Gravity pulls objects together.</p>');
       await page.evaluate(() => {
         const canvas = document.querySelector("canvas");
         const ctx = canvas.getContext("2d");
         ctx.fillStyle = "#20a070"; ctx.fillRect(0, 0, 560, 360);
         ctx.fillStyle = "white"; ctx.font = "40px sans-serif"; ctx.fillText("A diagram", 30, 100);
         window.payloads = [];
+        window.savedDefaults = {};
         window.chrome = {
-          storage: { sync: { get: async defaults => ({ ...defaults, apiKey: "test", mediaEnabled: true }) }, onChanged: { addListener(listener) { window.changeSettings = listener; } } },
+          storage: { sync: { get: async defaults => ({ ...defaults, apiKey: "test", mediaEnabled: true, ...savedDefaults }), set: async patch => Object.assign(savedDefaults, patch) }, onChanged: { addListener(listener) { window.changeSettings = listener; } } },
           runtime: {
             getManifest: () => ({ version: "0.0.1" }),
             getURL: name => `chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/${name}`,
@@ -249,41 +254,88 @@ async function checkPopup(browser) {
       }
       // A new text selection must replace the previous media hover target.
       await page.mouse.move(80, 270); await page.mouse.down(); await page.mouse.up();
-      await page.evaluate(() => {
-        const range = document.createRange(); range.selectNodeContents(document.querySelector("p"));
+      const selectionRect = await page.evaluate(() => {
+        const paragraph = document.querySelector("p");
+        paragraph.style.marginLeft = "40.25px";
+        const range = document.createRange(); range.selectNodeContents(paragraph);
         getSelection().removeAllRanges(); getSelection().addRange(range);
         document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+        return range.getBoundingClientRect().toJSON();
       });
+      const readPageLayout = () => page.evaluate(() => ({
+        gutter: innerWidth - document.documentElement.clientWidth,
+        textRight: document.querySelector("p").getBoundingClientRect().right,
+        rootOverflow: getComputedStyle(document.documentElement).overflowY,
+        bodyOverflow: getComputedStyle(document.body).overflowY,
+      }));
+      const pageLayout = await readPageLayout();
+      assert.equal(pageLayout.gutter, 16);
       await tip.waitFor({ state: "visible" }); await tip.click();
       await page.waitForFunction(() => payloads.length === 2);
+      assert.deepEqual(await readPageLayout(), pageLayout);
+      const spotlight = await page.evaluate(() => {
+        const shadow = document.querySelector("#elix-root").shadowRoot;
+        const veil = shadow.querySelector(".veil");
+        const svgSource = decodeURIComponent(veil.style.maskImage.split(",")[1].slice(0, -2));
+        const svg = new DOMParser().parseFromString(svgSource, "image/svg+xml").documentElement;
+        return {
+          mark: shadow.querySelector(".marks .mark").getBoundingClientRect().toJSON(),
+          hole: [...svg.querySelector('rect[fill="black"]').attributes]
+            .filter(attr => attr.name !== "fill")
+            .map(attr => Number(attr.value)),
+          maskWidth: Number(svg.getAttribute("width")),
+          veilWidth: veil.getBoundingClientRect().width,
+          barTop: shadow.querySelector(".prompt-bar").offsetTop,
+        };
+      });
+      assert.equal(spotlight.mark.left, selectionRect.left - 2);
+      assert.equal(spotlight.mark.right, selectionRect.right + 2);
+      assert.deepEqual(spotlight.hole, [
+        spotlight.mark.left, spotlight.mark.top, spotlight.mark.width, spotlight.mark.height,
+      ]);
+      assert.equal(spotlight.maskWidth, spotlight.veilWidth);
+      assert.equal(spotlight.barTop, Math.round(spotlight.mark.bottom + 16));
+      await page.mouse.move(10, 100);
+      await page.mouse.wheel(0, 160);
+      await page.keyboard.press("PageDown");
+      await page.waitForTimeout(100);
+      assert.equal(await page.evaluate(() => scrollY), 0);
+      assert.equal(await page.evaluate(() => {
+        window.scrollTo(0, 100);
+        return scrollY;
+      }), 100);
+      await page.waitForFunction(() => scrollY === 0);
       assert.match(await page.evaluate(() => payloads[1].text), /Gravity/);
       assert.equal(await page.evaluate(() => payloads[1].imageDataUrl), undefined);
 
-      const loader = page.getByRole("status").filter({ hasText: "Thinking" });
+      const loader = page.getByRole("status").filter({ hasText: "Thinking…" });
       const definition = page.locator("#elix-root .result");
       await loader.waitFor({ state: "visible" });
       assert.match(await loader.evaluate(el => getComputedStyle(el).fontFamily), /ELIX Inter/);
       const visibleOnFirstChunk = await page.evaluate(() => {
         const result = document.querySelector("#elix-root").shadowRoot.querySelector(".result");
-        respondToExplain({ type: "chunk", text: "Gravity" });
-        const visible = !result.classList.contains("hidden");
-        respondToExplain({ type: "chunk", text: " pulls" });
-        return visible;
+        const observer = new MutationObserver(() => {
+          window.firstRevealedText = result.textContent;
+          observer.disconnect();
+        });
+        observer.observe(result, { childList: true });
+        respondToExplain({ type: "chunk", text: "Gravity pulls" });
+        return !result.classList.contains("hidden");
       });
       assert.equal(visibleOnFirstChunk, reducedMotion);
       await loader.waitFor({ state: "hidden" });
       await definition.waitFor({ state: "visible" });
-      assert.equal(await definition.textContent(), "Gravity pulls");
+      await page.getByText("Gravity pulls", { exact: true }).waitFor({ state: "visible" });
+      assert.equal(await page.evaluate(() => firstRevealedText), reducedMotion ? "Gravity pulls" : "Gravity ");
       await page.evaluate(() => {
         respondToExplain({ type: "chunk", text: " things together." });
         respondToExplain({ type: "done" });
       });
-      assert.equal(await definition.textContent(), "Gravity pulls things together.");
+      await page.getByText("Gravity pulls things together.", { exact: true }).waitFor({ state: "visible" });
 
       const ageSelector = page.getByRole("group", { name: "Explanation age" });
       const otherButton = ageSelector.getByRole("button", { name: "Other" });
       const persona = page.getByRole("textbox", { name: "Persona or audience" });
-      const cancelPersona = page.getByRole("button", { name: "Cancel" });
       assert.equal(await page.getByRole("button", { name: "Settings" }).count(), 0);
 
       const ageFive = ageSelector.getByRole("button", { name: "5", exact: true });
@@ -291,22 +343,46 @@ async function checkPopup(browser) {
       assert.equal(await ageFive.getAttribute("aria-pressed"), "true");
       const bar = page.locator("#elix-root .prompt-bar");
       const barBefore = await bar.boundingBox();
-      const otherBox = await otherButton.boundingBox();
+      const choices = bar.locator(".choices");
+      const choicesBefore = await choices.boundingBox();
       await otherButton.click();
       await ageFive.waitFor({ state: "hidden" });
       await persona.waitFor({ state: "visible" });
+      await page.waitForFunction(() => {
+        const choices = document.querySelector("#elix-root").shadowRoot.querySelector(".choices");
+        return choices.getBoundingClientRect().width === 225;
+      });
       const barAfter = await bar.boundingBox();
-      assert.ok(Math.abs(barAfter.width - barBefore.width) <= 2);
-      assert.ok(Math.abs(barAfter.height - barBefore.height) <= 2);
+      const choicesAfter = await choices.boundingBox();
+      assert.equal(barAfter.x, barBefore.x);
+      if (choicesAfter.y === choicesBefore.y) {
+        assert.equal(choicesAfter.x, choicesBefore.x);
+      } else {
+        assert.equal(choicesAfter.x, barAfter.x);
+      }
+      assert.equal(choicesAfter.height, 30);
+      assert.notEqual(choicesBefore.width, choicesAfter.width);
+      assert.equal(await page.getByRole("button", { name: "Cancel" }).count(), 0);
+
+      if (reducedMotion) {
+        assert.equal(await persona.getAttribute("placeholder"), "a designer");
+        assert.equal(await choices.evaluate(el => getComputedStyle(el).transitionDuration), "0s");
+      } else {
+        for (const phrase of ["a designer", "a french guy", "a cat"]) {
+          await page.waitForFunction(phrase => {
+            const input = document.querySelector("#elix-root").shadowRoot.querySelector(".other input");
+            return input.placeholder === phrase && input.value === "";
+          }, phrase);
+        }
+      }
       assert.equal(await page.getByRole("button", { name: "Go" }).count(), 0);
       assert.equal(await page.getByRole("button", { name: "Delete" }).count(), 0);
       const accept = page.getByRole("button", { name: "Accept" });
       const personaBox = await persona.boundingBox();
       const acceptBox = await accept.boundingBox();
-      const cancelBox = await cancelPersona.boundingBox();
       assert.ok(acceptBox.x >= personaBox.x + personaBox.width - 1);
-      assert.ok(cancelBox.x >= acceptBox.x + acceptBox.width - 1);
-      assert.ok(personaBox.width > otherBox.width);
+      assert.equal(acceptBox.width, 22);
+      assert.equal(acceptBox.height, 22);
       await persona.fill("a tired parent");
       await persona.press("Enter");
       await page.waitForFunction(() => payloads.length === 3);
@@ -320,10 +396,11 @@ async function checkPopup(browser) {
       assert.equal(await pill.getAttribute("aria-pressed"), "true");
 
       assert.equal(await ageFive.getAttribute("aria-pressed"), "false");
-      await ageFive.press("Space");
+      const ageFifteen = ageSelector.getByRole("button", { name: "15", exact: true });
+      await ageFifteen.press("Space");
       await page.waitForFunction(() => payloads.length === 4);
-      assert.equal(await page.evaluate(() => payloads[3].level), "5");
-      assert.equal(await ageFive.getAttribute("aria-pressed"), "true");
+      assert.equal(await page.evaluate(() => payloads[3].level), "15");
+      assert.equal(await ageFifteen.getAttribute("aria-pressed"), "true");
       assert.equal(await pill.getAttribute("aria-pressed"), "false");
 
       await pill.click();
@@ -338,7 +415,7 @@ async function checkPopup(browser) {
       assert.equal(await persona.inputValue(), "a tired parent");
       await page.screenshot({ path: `/tmp/elix-persona-edit-${viewport.width}.png` });
       await persona.fill("a cat");
-      await cancelPersona.click();
+      await persona.press("Escape");
       await persona.waitFor({ state: "hidden" });
       await pill.waitFor({ state: "visible" });
       assert.equal(await page.evaluate(() => payloads.length), 5);
@@ -346,8 +423,9 @@ async function checkPopup(browser) {
       const longName = "a very tired parent who wants the short version tonight";
       await pill.click();
       await persona.fill(longName);
-      await persona.press("Enter");
+      await accept.click();
       await page.waitForFunction(() => payloads.length === 6);
+      assert.equal(await page.evaluate(() => payloads[5].freeform), longName);
       const longPill = ageSelector.getByRole("button", { name: longName });
       await longPill.waitFor({ state: "visible" });
       const personaLabels = page.locator(".age-selector .persona-segment-label");
@@ -355,12 +433,24 @@ async function checkPopup(browser) {
         width: label.getBoundingClientRect().width,
         truncated: label.scrollWidth > label.clientWidth,
         overflow: getComputedStyle(label).textOverflow,
+        paintPadding: getComputedStyle(label).paddingBlockEnd,
       })));
       assert.equal(labelMetrics.length, 2);
       assert.deepEqual(labelMetrics[0], labelMetrics[1]);
       assert.equal(labelMetrics[0].truncated, true);
       assert.equal(labelMetrics[0].overflow, "ellipsis");
+      assert.equal(labelMetrics[0].paintPadding, "1px");
+      const railBox = await choices.boundingBox();
+      const indicatorBox = await page.locator(".segmented-controller-indicator").boundingBox();
+      assert.ok(indicatorBox.y >= railBox.y);
+      assert.ok(indicatorBox.y + indicatorBox.height <= railBox.y + railBox.height);
       assert.equal(await longPill.getAttribute("title"), longName);
+      await page.waitForFunction(() => {
+        const shadow = document.querySelector("#elix-root").shadowRoot;
+        const rail = shadow.querySelector(".choices").getBoundingClientRect();
+        const output = shadow.querySelector(".output").getBoundingClientRect();
+        return Math.abs(output.top - rail.bottom - 10) <= 0.5;
+      });
       await page.screenshot({ path: `/tmp/elix-persona-${viewport.width}.png` });
 
       await longPill.click();
@@ -371,6 +461,11 @@ async function checkPopup(browser) {
       await page.getByRole("button", { name: "Other" }).waitFor({ state: "visible" });
       await persona.waitFor({ state: "hidden" });
       await ageFive.waitFor({ state: "visible" });
+
+      await page.waitForFunction(() => payloads.length === 7);
+      assert.equal(await page.evaluate(() => payloads[6].level), "15");
+      assert.equal(await ageFifteen.getAttribute("aria-pressed"), "true");
+      assert.deepEqual(await page.evaluate(() => savedDefaults), { defaultLevel: "15", defaultFreeform: "" });
 
       const segmentStyle = await ageFive.evaluate(el => {
         const { fontFamily, fontSize, letterSpacing } = getComputedStyle(el);
@@ -393,9 +488,12 @@ async function checkPopup(browser) {
       await page.evaluate(() => changeSettings({ apiKey: { newValue: "" } }, "sync"));
       await page.getByText("API key required. Open ELIX in the Chrome toolbar to add it.").waitFor();
       await page.evaluate(() => changeSettings({ apiKey: { newValue: "test" } }, "sync"));
-      await page.waitForFunction(() => payloads.length === 7);
+      await page.waitForFunction(() => payloads.length === 8);
       await page.keyboard.press("Escape");
       await ageFive.waitFor({ state: "hidden" });
+      assert.deepEqual(await readPageLayout(), pageLayout);
+      await page.mouse.wheel(0, 160);
+      await page.waitForFunction(() => scrollY > 0);
       assert.deepEqual(errors, []);
       await page.close();
     }

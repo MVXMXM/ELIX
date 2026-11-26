@@ -2,15 +2,19 @@
   const HOST_ID = "elix-root";
   const LEVELS = ["5", "10", "15", "20"];
   const DEFAULT_LEVEL = "5";
+  const PERSONA_SUGGESTIONS = ["a designer", "a french guy", "a cat"];
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   const MISSING_API_KEY = "API key required. Open ELIX in the Chrome toolbar to add it.";
   const OVERLAY_FADE_MS = 220;
   const LOADER_FADE_MS = 150;
+  const RESPONSE_REVEAL_MS = 28;
   // In-page highlight menus mount after mouseup; wait before placing the chip.
   const MENU_WAIT_MS = 220;
   const MENU_LATE_MS = 180;
   const TIP_GAP = 8;
   const MENU_PROXIMITY = 64;
   const VIEW_MARGIN = 8;
+  const TEXT_HIGHLIGHT_PADDING = 2;
   // A long highlight already carries its meaning. Shorter ones get a passage.
   const CONTEXT_SKIP_AT = 280;
   const CONTEXT_CAP = 400;
@@ -25,6 +29,8 @@
   let promptBar = null;
   let renderAgeSelector;
   let selectedLevel = "";
+  let lastNumberedLevel = DEFAULT_LEVEL;
+  let placeholderTimer;
   let output = null;
   let scrim = null;
   let veil = null;
@@ -51,14 +57,10 @@
   let pinningScroll = false;
   let savedScrollX = 0;
   let savedScrollY = 0;
-  let previousScrollLockStyles = {
-    htmlOverflow: "",
-    bodyOverflow: "",
-    htmlScrollbarGutter: "",
-    bodyPaddingInlineEnd: "",
-  };
   let explainPort = null;
   let loaderExit = null;
+  let responseRevealTimer;
+  let responseText = "";
   let overlayFadeTimer = null;
   let explainDefaults = { defaultLevel: DEFAULT_LEVEL, defaultFreeform: "" };
   let hasApiKey = false;
@@ -116,11 +118,11 @@
         cancelMediaCapture();
         return;
       }
-      hideOverlay();
+      if (!closeOtherOnEscape()) hideOverlay();
       return;
     }
 
-    if (!isOverlayOpen()) {
+    if (!isOverlayOpen() && !scrollLocked) {
       return;
     }
     if (event.isComposing || event.keyCode === 229) {
@@ -162,9 +164,7 @@
   }
 
   function preventPageScroll(event) {
-    if (isEventFromUi(event)) {
-      return;
-    }
+    if (event.composedPath().includes(output)) return;
     event.preventDefault();
   }
 
@@ -176,7 +176,7 @@
       return;
     }
     pinningScroll = true;
-    window.scrollTo(savedScrollX, savedScrollY);
+    window.scrollTo({ left: savedScrollX, top: savedScrollY, behavior: "instant" });
     pinningScroll = false;
   }
 
@@ -197,66 +197,25 @@
     }
   }
 
-  function getRootScrollbarWidth() {
-    return Math.max(0, window.innerWidth - document.documentElement.clientWidth);
-  }
-
-  function supportsStableScrollbarGutter() {
-    return typeof CSS !== "undefined" && CSS.supports?.("scrollbar-gutter: stable");
-  }
-
   function lockScroll() {
-    if (scrollLocked) {
-      return;
-    }
+    if (scrollLocked) return;
 
     scrollLocked = true;
     savedScrollX = window.scrollX;
     savedScrollY = window.scrollY;
-    const rootClientWidth = document.documentElement.clientWidth;
-    const scrollbarWidth = getRootScrollbarWidth();
-    const canReserveScrollbarGutter = supportsStableScrollbarGutter();
-    previousScrollLockStyles = {
-      htmlOverflow: document.documentElement.style.overflow,
-      bodyOverflow: document.body.style.overflow,
-      htmlScrollbarGutter: document.documentElement.style.scrollbarGutter,
-      bodyPaddingInlineEnd: document.body.style.paddingInlineEnd,
-    };
 
-    if (
-      scrollbarWidth > 0 &&
-      canReserveScrollbarGutter &&
-      !/\bstable\b/.test(previousScrollLockStyles.htmlScrollbarGutter)
-    ) {
-      document.documentElement.style.scrollbarGutter = "stable";
-    }
-    document.documentElement.style.overflow = "hidden";
-    document.body.style.overflow = "hidden";
-
-    const layoutExpansion = document.documentElement.clientWidth - rootClientWidth;
-    if (scrollbarWidth > 0 && !canReserveScrollbarGutter && layoutExpansion > 0) {
-      const padding = getComputedStyle(document.body).paddingInlineEnd;
-      document.body.style.paddingInlineEnd = `calc(${padding} + ${layoutExpansion}px)`;
-    }
-
-    document.addEventListener("wheel", preventPageScroll, { passive: false });
-    document.addEventListener("touchmove", preventPageScroll, { passive: false });
+    // Keep the page's native scrollbar and layout in place while the overlay is open.
+    document.addEventListener("wheel", preventPageScroll, { capture: true, passive: false });
+    document.addEventListener("touchmove", preventPageScroll, { capture: true, passive: false });
   }
 
   function unlockScroll() {
-    if (!scrollLocked) {
-      return;
-    }
+    if (!scrollLocked) return;
 
+    pinScroll();
     scrollLocked = false;
-    document.documentElement.style.overflow = previousScrollLockStyles.htmlOverflow;
-    document.body.style.overflow = previousScrollLockStyles.bodyOverflow;
-    document.documentElement.style.scrollbarGutter =
-      previousScrollLockStyles.htmlScrollbarGutter;
-    document.body.style.paddingInlineEnd = previousScrollLockStyles.bodyPaddingInlineEnd;
-    document.removeEventListener("wheel", preventPageScroll);
-    document.removeEventListener("touchmove", preventPageScroll);
-    window.scrollTo(savedScrollX, savedScrollY);
+    document.removeEventListener("wheel", preventPageScroll, true);
+    document.removeEventListener("touchmove", preventPageScroll, true);
   }
 
   function ensureUi() {
@@ -364,36 +323,54 @@
           display: flex;
           flex-wrap: wrap;
           align-items: center;
-          gap: 8px 10px;
+          gap: 8px 6px;
           max-width: min(560px, calc(100vw - 24px));
         }
 
         .prompt {
           margin: 0;
-          color: var(--foreground);
-          font: 600 14px/1.3 var(--font-sans);
+          color: #45556c;
+          font: 400 14px/14px "ELIX Inter", sans-serif;
         }
 
         .choices {
           position: relative;
           display: flex;
+          align-items: center;
           min-width: 0;
           max-width: 100%;
+          height: 30px;
+          width: max-content;
+          border: 1px solid #e2e8f0;
+          border-radius: 40px;
+          interpolate-size: allow-keywords;
+          transition: width 400ms cubic-bezier(0.22, 1, 0.36, 1), border-color 240ms ease;
+        }
+
+        .choices:has(.other.open) {
+          width: 225px;
+          border-color: rgb(0 187 255 / 50%);
         }
 
         .levels {
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          gap: 6px;
-          max-width: 100%;
+          flex: none;
+        }
+
+        .levels,
+        .other {
+          transition: opacity 180ms ease, transform 400ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s;
         }
 
         .choices:has(.other.open) .levels {
+          opacity: 0;
+          transform: translateX(4px) scale(0.98);
           visibility: hidden;
+          transition-delay: 0s, 0s, 180ms;
+          pointer-events: none;
         }
 
         .levels .age-selector .segmented-controller {
+          --background-alt: #e2e8f0;
           gap: 2px;
           padding: 2px;
         }
@@ -402,32 +379,39 @@
           padding: 5px 8px;
         }
 
+        .age-selector .segmented-controller .segmented-controller-button[aria-pressed="false"] {
+          color: #62748e;
+        }
+
+        .age-selector .segmented-controller .segmented-controller-indicator {
+          background: #45556c;
+        }
+
         .age-selector .segmented-controller:not(:has(button[aria-pressed="true"])) .segmented-controller-indicator {
           visibility: hidden;
         }
 
-        button.icon {
+        .other button {
           appearance: none;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          width: 26px;
-          height: 26px;
+          width: 22px;
+          height: 22px;
           padding: 0;
-          border: 1px solid var(--border);
-          border-radius: 999px;
-          background: var(--surface);
-          color: var(--foreground);
+          border: 0;
+          border-radius: 50%;
+          background: #00bbff;
+          color: white;
           cursor: pointer;
           flex: none;
         }
 
-        button.icon:hover {
-          background: var(--background-alt);
-          border-color: var(--foreground);
+        .other button:hover {
+          background: #00aeea;
         }
 
-        button.icon:focus-visible {
+        .other button:focus-visible {
           outline: 2px solid var(--foreground);
           outline-offset: 2px;
         }
@@ -435,6 +419,8 @@
         .persona-segment-label {
           /* The indicator uses rounded button dimensions. Keep both text boxes the same width. */
           flex: none;
+          margin-block: -1px;
+          padding-block: 1px;
           max-width: clamp(48px, calc(100vw - 174px), 11rem);
           overflow: hidden;
           text-overflow: ellipsis;
@@ -442,37 +428,56 @@
         }
 
         .other {
-          display: none;
+          display: flex;
           position: absolute;
           inset: 0;
           align-items: center;
-          gap: 6px;
+          gap: 4px;
+          padding: 1px 3px 1px 8px;
+          opacity: 0;
+          transform: translateX(-4px) scale(0.98);
+          visibility: hidden;
+          transition-delay: 0s, 0s, 180ms;
+          pointer-events: none;
         }
 
-        .other.open { display: flex; }
+        .other.open {
+          opacity: 1;
+          transform: none;
+          visibility: visible;
+          transition-delay: 0s;
+          pointer-events: auto;
+        }
 
         .other input {
           flex: 1 1 auto;
           width: 0;
-          height: 26px;
+          height: 24px;
           min-width: 0;
-          border-radius: 999px;
-          border: 1px solid var(--border);
-          background: var(--surface);
-          color: var(--foreground);
-          padding: 0 10px;
-          font: 12px/1.3 var(--font-sans);
+          border: 0;
+          background: transparent;
+          padding: 0;
+          outline: none;
+          color: #45556c;
+          caret-color: #00bbff;
+          font: 400 14px/14px "ELIX Inter", sans-serif;
           text-overflow: ellipsis;
         }
 
         .other input::placeholder {
-          color: var(--muted);
+          color: #90a1b9;
+          opacity: 1;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .choices, .levels, .other { transition: none; }
         }
 
         .output {
           max-width: min(420px, calc(100vw - 24px));
           max-height: min(48vh, 420px);
           overflow: auto;
+          overscroll-behavior: contain;
           font: 16px/1.75 var(--font-sans);
         }
 
@@ -557,19 +562,14 @@
       </button>
 
       <div class="prompt-bar hidden">
-        <p class="prompt">Explain like I'm…</p>
+        <p class="prompt">Explain like I'm</p>
         <div class="choices">
           <div class="levels"><div class="age-selector"></div></div>
-          <div class="other">
-            <input type="text" aria-label="Persona or audience" placeholder="e.g. French / a cat / a tired parent" />
-            <button type="button" class="icon" data-action="accept-other" aria-label="Accept">
+          <div class="other" inert>
+            <input type="text" aria-label="Persona or audience" />
+            <button type="button" data-action="accept-other" aria-label="Accept">
               <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
-                <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M3.5 8.5 6.5 11.5 12.5 4.5"/>
-              </svg>
-            </button>
-            <button type="button" class="icon" data-action="close-other" aria-label="Cancel">
-              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
-                <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M4 4l8 8M12 4l-8 8"/>
+                <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3.5 8.5 6.5 11.5 12.5 4.5"/>
               </svg>
             </button>
           </div>
@@ -589,6 +589,15 @@
     tip = shadow.querySelector(".tip");
     promptBar = shadow.querySelector(".prompt-bar");
     output = shadow.querySelector(".output");
+
+    // Wrapping can change the bar's height while the pill animates.
+    let barHeight = promptBar.offsetHeight;
+    new ResizeObserver(() => {
+      const height = promptBar.offsetHeight;
+      if (height === barHeight) return;
+      barHeight = height;
+      if (isOverlayOpen() && lastRect) positionOverlay(lastRect, true);
+    }).observe(promptBar);
 
     const levels = shadow.querySelector(".levels");
 
@@ -688,21 +697,17 @@
 
   function updateSpotlight() {
     const rects = (lastHoles.length ? lastHoles : lastRect ? [lastRect] : [])
-      .map(holeFromRect)
+      // Range rects measure text advances. Glyphs can paint beyond those edges.
+      .map((rect) => holeFromRect(lastRange ? inflate(rect, TEXT_HIGHLIGHT_PADDING) : rect))
       .filter((hole) => hole.width > 0 && hole.height > 0);
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+    const { width: vw, height: vh } = veil.getBoundingClientRect();
     const cuts = rects
-      .map((hole) => {
-        const top = Math.round(hole.top);
-        const left = Math.round(hole.left);
-        const width = Math.max(1, Math.round(hole.width));
-        const height = Math.max(1, Math.round(hole.height));
-        return `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="black"/>`;
-      })
+      .map(({ top, left, width, height }) =>
+        `<rect x="${left}" y="${top}" width="${width}" height="${height}" fill="black"/>`
+      )
       .join("");
     const svg =
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${vw}" height="${vh}">` +
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${vw}" height="${vh}" viewBox="0 0 ${vw} ${vh}">` +
       `<rect width="100%" height="100%" fill="white"/>` +
       cuts +
       `</svg>`;
@@ -737,10 +742,10 @@
         marks.appendChild(mark);
       }
       Object.assign(mark.style, {
-        top: `${Math.round(hole.top)}px`,
-        left: `${Math.round(hole.left)}px`,
-        width: `${Math.round(hole.width)}px`,
-        height: `${Math.round(hole.height)}px`,
+        top: `${hole.top}px`,
+        left: `${hole.left}px`,
+        width: `${hole.width}px`,
+        height: `${hole.height}px`,
       });
     });
   }
@@ -781,18 +786,46 @@
     fadeOpen(output);
   }
 
-  function showResult(text) {
-    const status = output.querySelector(".status");
+  function cancelResponseReveal() {
+    clearTimeout(responseRevealTimer);
+    responseRevealTimer = undefined;
+    responseText = "";
+  }
+
+  function revealResponseText() {
+    clearTimeout(responseRevealTimer);
+    responseRevealTimer = undefined;
     const result = output.querySelector(".result");
-    result.textContent = text;
-    if (loaderExit) return;
-    if (status.classList.contains("hidden") || matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      hideLoader();
-      result.classList.remove("hidden");
+    if (reducedMotion.matches) {
+      result.textContent = responseText;
       return;
     }
 
-    // Leave the result hidden during the fade, but keep appending incoming text.
+    const pending = responseText.slice(result.textContent.length);
+    if (!pending) return;
+    // Reveal whole words quickly and increase the batch size when chunks arrive in a burst.
+    const target = Math.ceil(pending.length * 0.08);
+    let end = 0;
+    for (const [word] of pending.matchAll(/\S+\s*|\s+/g)) {
+      end += word.length;
+      if (end >= target) break;
+    }
+    result.textContent += pending.slice(0, end);
+    responseRevealTimer = setTimeout(revealResponseText, RESPONSE_REVEAL_MS);
+  }
+
+  function showResult(text) {
+    responseText = text;
+    const status = output.querySelector(".status");
+    const result = output.querySelector(".result");
+    if (reducedMotion.matches || status.classList.contains("hidden")) {
+      hideLoader();
+      if (reducedMotion.matches || responseRevealTimer === undefined) revealResponseText();
+      result.classList.remove("hidden");
+      return;
+    }
+    if (loaderExit) return;
+
     const exit = status.animate([{ opacity: getComputedStyle(status).opacity }, { opacity: 0 }], {
       duration: LOADER_FADE_MS,
       easing: "ease-in",
@@ -802,11 +835,13 @@
     exit.onfinish = () => {
       if (loaderExit !== exit) return;
       hideLoader();
+      revealResponseText();
       result.classList.remove("hidden");
     };
   }
 
   function showError(text) {
+    cancelResponseReveal();
     const result = output.querySelector(".result");
     const error = output.querySelector(".error");
     fadeOpen(output);
@@ -817,6 +852,7 @@
   }
 
   function abortExplain() {
+    cancelResponseReveal();
     if (!explainPort) return;
     const port = explainPort;
     explainPort = null;
@@ -964,24 +1000,66 @@
   }
 
   function clearOther() {
-    if (selectedLevel === "other") selectedLevel = "";
-    explainDefaults = { ...explainDefaults, defaultFreeform: "" };
-    const patch = { defaultFreeform: "" };
-    if (explainDefaults.defaultLevel === "other") {
-      explainDefaults = { ...explainDefaults, defaultLevel: DEFAULT_LEVEL };
-      patch.defaultLevel = DEFAULT_LEVEL;
-    }
-    const write = chrome.storage?.sync?.set?.(patch);
+    const changed = selectedLevel !== lastNumberedLevel;
+    selectedLevel = lastNumberedLevel;
+    explainDefaults = { defaultLevel: lastNumberedLevel, defaultFreeform: "" };
+    const write = chrome.storage?.sync?.set?.({ ...explainDefaults });
     if (write?.catch) write.catch(() => {});
     setOtherOpen(false);
-    otherSegment()?.focus({ preventScroll: true });
+    promptBar.querySelector('.age-selector button[aria-pressed="true"]')?.focus({ preventScroll: true });
+    if (changed) requestExplain(lastNumberedLevel);
+  }
+
+  function animatePersonaPlaceholder() {
+    clearTimeout(placeholderTimer);
+    const input = promptBar?.querySelector(".other.open input");
+    if (!input) return;
+
+    if (reducedMotion.matches) {
+      input.placeholder = PERSONA_SUGGESTIONS[0];
+      return;
+    }
+
+    let suggestion = 0;
+    let length = 0;
+    let deleting = false;
+    input.placeholder = "";
+
+    function tick() {
+      if (!input.isConnected) return;
+      const phrase = PERSONA_SUGGESTIONS[suggestion];
+      length += deleting ? -1 : 1;
+      input.placeholder = phrase.slice(0, length);
+
+      let delay = deleting ? 40 : 75;
+      if (length === phrase.length) {
+        deleting = true;
+        delay = 1200;
+      } else if (length === 0) {
+        deleting = false;
+        suggestion = (suggestion + 1) % PERSONA_SUGGESTIONS.length;
+        delay = 250;
+      }
+
+      placeholderTimer = setTimeout(tick, delay);
+    }
+
+    placeholderTimer = setTimeout(tick, 75);
   }
 
   function setOtherOpen(open) {
-    if (!promptBar) return;
-    promptBar.querySelector(".other").classList.toggle("open", open);
+    const editor = promptBar.querySelector(".other");
+    editor.classList.toggle("open", open);
+    editor.inert = !open;
     syncAgeSelector();
-    if (lastRect && isOverlayOpen()) positionOverlay(lastRect);
+    animatePersonaPlaceholder();
+  }
+
+  function closeOtherOnEscape() {
+    if (!promptBar.querySelector(".other.open")) return false;
+    setOtherOpen(false);
+    otherSegment()?.focus({ preventScroll: true });
+    return true;
   }
 
   function openOtherEditor() {
@@ -1051,30 +1129,21 @@
     }
 
     setOtherOpen(false);
+    lastNumberedLevel = level;
     markSelectedLevel(level);
     saveLevel(level, "");
     requestExplain(level);
   }
 
   function onPromptClick(event) {
-    const button = event.target.closest("button");
-    if (!button) return;
-
-    if (button.dataset.action === "accept-other") {
-      submitOther();
-      return;
-    }
-
-    if (button.dataset.action === "close-other") {
-      setOtherOpen(false);
-      otherSegment()?.focus({ preventScroll: true });
-    }
+    if (event.target.closest('button[data-action="accept-other"]')) submitOther();
   }
 
-  function positionOverlay(rect) {
+  function positionOverlay(rect, preserveLeft = false) {
     if (!promptBar || !rect) return;
 
-    const gap = 14;
+    const gapAbove = 16 + (lastRange ? TEXT_HIGHLIGHT_PADDING : 0);
+    const gapBelow = 10;
     const hole = holeFromRect(rect);
 
     promptBar.style.maxWidth = `${Math.min(560, window.innerWidth - VIEW_MARGIN * 2)}px`;
@@ -1082,16 +1151,18 @@
     const barWidth = promptBar.offsetWidth;
     const barHeight = promptBar.offsetHeight;
     const maxBarTop = Math.max(VIEW_MARGIN, window.innerHeight - barHeight - VIEW_MARGIN);
-    const barTop = Math.min(Math.max(VIEW_MARGIN, hole.bottom + gap), maxBarTop);
+    const barTop = Math.min(Math.max(VIEW_MARGIN, hole.bottom + gapAbove), maxBarTop);
 
     const maxLeft = Math.max(VIEW_MARGIN, window.innerWidth - barWidth - VIEW_MARGIN);
-    const barLeft = Math.min(Math.max(VIEW_MARGIN, hole.left), maxLeft);
+    const barLeft = preserveLeft
+      ? promptBar.offsetLeft
+      : Math.min(Math.max(VIEW_MARGIN, hole.left), maxLeft);
 
     promptBar.style.top = `${Math.round(barTop)}px`;
     promptBar.style.left = `${Math.round(barLeft)}px`;
 
     const outMax = Math.min(420, window.innerWidth - VIEW_MARGIN * 2);
-    const outTop = barTop + barHeight + gap;
+    const outTop = barTop + barHeight + gapBelow;
     output.style.maxWidth = `${outMax}px`;
     output.style.top = `${Math.round(outTop)}px`;
     output.style.left = `${Math.round(barLeft)}px`;
@@ -1109,6 +1180,7 @@
     abortExplain();
     cancelLoaderExit();
     clearTimeout(overlayFadeTimer);
+    clearTimeout(placeholderTimer);
 
     scrim.classList.remove("open");
     promptBar.classList.remove("open");
@@ -1120,10 +1192,9 @@
       scrim.classList.add("hidden");
       focusCatcher.classList.add("hidden");
 
-      promptBar.querySelector(".other").classList.remove("open");
       promptBar.querySelector(".other input").value = "";
       selectedLevel = "";
-      syncAgeSelector();
+      setOtherOpen(false);
       hideLoader();
       output.querySelector(".result").classList.add("hidden");
       output.querySelector(".result").textContent = "";
@@ -2037,9 +2108,9 @@
       lastText = "";
       lastImage = "";
       ensureUi();
-      updateSpotlight();
       focusCatcher.classList.remove("hidden");
       fadeOpen(scrim);
+      updateSpotlight();
       fadeOpen(promptBar);
       lockScroll();
       positionOverlay(lastRect);
@@ -2121,7 +2192,6 @@
     }
 
     ensureUi();
-    updateSpotlight();
 
     clearTimeout(overlayFadeTimer);
     focusCatcher.classList.remove("hidden");
@@ -2131,8 +2201,9 @@
     output.classList.remove("open");
     output.classList.add("hidden");
     lockScroll();
+    updateSpotlight();
 
-    promptBar.querySelector(".other").classList.remove("open");
+    setOtherOpen(false);
     promptBar.querySelector(".other input").value = "";
     hideLoader();
     output.querySelector(".result").classList.add("hidden");
@@ -2220,7 +2291,7 @@
 
     if (isOverlayOpen()) {
       event.preventDefault();
-      hideOverlay();
+      if (!closeOtherOnEscape()) hideOverlay();
       return;
     }
 
@@ -2230,6 +2301,14 @@
       hideTip();
       mediaTarget = null;
     }
+  });
+
+  reducedMotion.addEventListener("change", () => {
+    if (promptBar?.classList.contains("open")) animatePersonaPlaceholder();
+  });
+  window.addEventListener("pagehide", () => clearTimeout(placeholderTimer));
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted && promptBar?.classList.contains("open")) animatePersonaPlaceholder();
   });
 
   window.addEventListener("keydown", stopHostKeys, true);
