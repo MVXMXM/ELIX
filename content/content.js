@@ -63,7 +63,12 @@
   let responseText = "";
   let overlayFadeTimer = null;
   let explainDefaults = { defaultLevel: DEFAULT_LEVEL, defaultFreeform: "" };
-  let hasApiKey = false;
+  let hasStoredKey = false;
+  let hasDataConsent = false;
+
+  function canExplain() {
+    return hasStoredKey && hasDataConsent;
+  }
 
   function isEventFromUi(event) {
     if (!host) return false;
@@ -864,7 +869,7 @@
   }
 
   function requestExplain(level, freeform) {
-    if (!hasApiKey) {
+    if (!canExplain()) {
       showError(MISSING_API_KEY);
       return;
     }
@@ -953,6 +958,7 @@
         defaultLevel: DEFAULT_LEVEL,
         defaultFreeform: "",
         apiKey: "",
+        dataConsent: false,
         mediaEnabled: false,
       });
       explainDefaults = {
@@ -960,7 +966,8 @@
         defaultFreeform: String(stored.defaultFreeform || ""),
       };
       setMediaEnabled(stored.mediaEnabled);
-      hasApiKey = Boolean(String(stored.apiKey || "").trim());
+      hasStoredKey = Boolean(String(stored.apiKey || "").trim());
+      hasDataConsent = stored.dataConsent === true;
     } catch {
       // Keep the in-memory default if extension storage is unavailable.
     }
@@ -1074,7 +1081,7 @@
 
   function startDefaultExplain() {
     syncAgeSelector();
-    if (!hasApiKey) {
+    if (!canExplain()) {
       showError(MISSING_API_KEY);
       return;
     }
@@ -2326,11 +2333,12 @@
       explainDefaults.defaultFreeform = String(changes.defaultFreeform.newValue || "");
       syncAgeSelector();
     }
-    if (changes.apiKey) {
-      const wasReady = hasApiKey;
-      hasApiKey = Boolean(String(changes.apiKey.newValue || "").trim());
-      if (!isOverlayOpen() || wasReady === hasApiKey) return;
-      if (hasApiKey) {
+    if (changes.apiKey || changes.dataConsent) {
+      const wasReady = canExplain();
+      if (changes.apiKey) hasStoredKey = Boolean(String(changes.apiKey.newValue || "").trim());
+      if (changes.dataConsent) hasDataConsent = changes.dataConsent.newValue === true;
+      if (!isOverlayOpen() || wasReady === canExplain()) return;
+      if (canExplain()) {
         startDefaultExplain();
       } else {
         abortExplain();

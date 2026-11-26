@@ -20,7 +20,12 @@
     </p>
     <form autocomplete="off">
       <fieldset disabled>
+        <p class="data-disclosure">When you request an explanation, ELIX sends the selected text and relevant nearby context to OpenAI. With Media input enabled, ELIX sends the crop you select. OpenAI receives this content using your API key. <a href="https://elix.fyi/privacy.html" target="_blank" rel="noopener noreferrer">Privacy policy</a></p>
         <input type="password" name="apiKey" aria-label="API key" placeholder="sk-..." spellcheck="false" autocomplete="off">
+        <label class="data-consent">
+          <input type="checkbox" name="dataConsent">
+          <span>I agree to send this content to OpenAI when I request an explanation.</span>
+        </label>
         <button class="system-button system-button--primary" type="submit" disabled>Add my key</button>
       </fieldset>
       <button class="system-button system-button--secondary" type="button" id="cancel-key-removal" hidden>Cancel</button>

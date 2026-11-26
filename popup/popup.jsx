@@ -121,7 +121,7 @@ async function loadSettings() {
     if (!models.some(({ id }) => id === savedSettings.model)) savedSettings.model = defaults.model;
     await refreshKeyActions();
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === "sync" && changes.apiKey) {
+      if (area === "sync" && (changes.apiKey || changes.dataConsent)) {
         refreshKeyActions().catch(() => {
           status.textContent = "Could not check the API key. Reopen ELIX to try again.";
         });

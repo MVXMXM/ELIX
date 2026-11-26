@@ -8,7 +8,7 @@ The idea came from Rauno Freiberg’s [inline word definition lookup](https://x.
 
 ## Design Decisions
 
-ELIX automates the flow described above by taking your highlighted content & packaging it with a pre-written prompt. The act of highlighting serves as the trigger to send content to an LLM, the equivalent of pressing a chatbot’s send button, then the response is streamed back into the page you requested it from.
+ELIX automates the flow described above by taking your highlighted content & packaging it with a pre-written prompt. Clicking the in-page ELIX button sends the selected content to the model and streams the response into the page.
 
 Instead of definitions, as Rauno’s prototype depicted, ELIX responds with explanations. This is because it solves for circumstances seeking useful understanding, which may not always be technically correct. Revolving the experience around the youthful presets (”explain like I’m 5, 10, 15, 20”) & the freeform input’s playful placeholders (”explain like I’m a cat”) reinforce the notion that responses are heuristics, not expert-level definition. As Nassim Taleb explains in Antifragile:
 
@@ -25,7 +25,7 @@ ELIX helps us act under uncertainty, without eliminating it entirely.
 2. Enable **Developer mode**
 3. Click **Load unpacked**
 4. Select this folder (`ELIX`)
-5. Open **ELIX** in the Chrome toolbar and click **Add an API key**. Enter your key in Chrome’s popup, then click **Add my key**. Highlight text on any normal webpage and click the in-page **ELIX** button.
+5. Open **ELIX** in the Chrome toolbar and click **Add an API key**. In the ELIX tab, enter your key, confirm the data disclosure, then click **Add my key**. Highlight text on any normal webpage and click the in-page **ELIX** button.
 6. It explains at the saved level (5 until you pick another age or persona). That choice is remembered.
 7. To explain a region of an image, video, or canvas, open **Settings** in the toolbar popup and turn on **Media input (alpha)**. Hover over the media, click **ELIX**, and drag a rectangle over the frozen screenshot. Press Escape to cancel; very small selections can be redrawn.
 
@@ -43,5 +43,11 @@ The chip only appears when the page exposes a normal HTML selection (`window.get
 
 ## Notes
 
-- The API key is stored in `chrome.storage.sync`. Enter or edit it in Chrome’s native popup. The in-page settings display only a masked abbreviation, and the service worker sends API requests.
+- The API key is stored in `chrome.storage.sync`. Enter or edit it in the dedicated ELIX tab. The in-page settings display only a masked abbreviation, and the service worker sends API requests.
 - Explanations are sent to OpenAI Chat Completions
+
+## Chrome Web Store build
+
+Run `npm ci`, then `npm run package:chrome` to create the upload ZIP under `build/releases/`. Test the extracted ZIP in a clean Chrome profile before uploading it to the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole).
+
+Before submitting, publish the [privacy policy](https://elix.fyi/privacy.html), prepare store screenshots and reviewer instructions, and verify that the permission declarations match the packaged build. The Chrome build uses access to HTTP and HTTPS pages to show the selection control. It requests `<all_urls>` host access for the opt-in screenshot flow that starts from the in-page ELIX button.

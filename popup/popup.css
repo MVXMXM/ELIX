@@ -347,3 +347,26 @@ input:focus-visible, select:focus-visible {
 }
 
 #cancel-key-removal { width: 100%; margin-top: 8px; }
+
+.data-disclosure {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.data-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.data-consent[hidden] { display: none; }
+
+.api-key-editor .data-consent input {
+  width: auto;
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--foreground);
+}
