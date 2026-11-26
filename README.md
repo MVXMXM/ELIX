@@ -1,12 +1,25 @@
-# ELIX (alpha preview)
+# ELIX
 
-A browser extension to look up anything in situ by simply highlighting text and selecting your complexity level: explain like I'm 5, 10, 15, 20, or input your own persona.
+Explain anything without interrupting your flow. Simply highlight something on screen for an in-situ explanation, tailored to your mind. Calibrate explanation complexity with cues like age, e.g. ELI5 (explain like I'm 5), or any persona you choose, e.g. a physicist, a French guy, or even a cat.
 
-## Status
+## Origin
 
-Working Manifest V3 BYOK prototype.
+The idea came from Rauno Freiberg’s [inline word definition lookup](https://x.com/MVXMXM/status/1752330736055579071?s=20) prototype. I loved the UX of augmenting intellect without breaking flow. By contrast, when reading online, I persistently tabbed to a chatbot to ask what something meant, which takes seven steps each time (highlight text → cmd + c → switch to chatbot tab → type “ELI5” → cmd + p → enter → return to original tab). ELIX consolidates this into two steps (originally I tried just one, but it was a step too far).
 
-## Chromium Alpha Test
+## Design Decisions
+
+ELIX automates the flow described above by taking your highlighted content & packaging it with a pre-written prompt. The act of highlighting serves as the trigger to send content to an LLM, the equivalent of pressing a chatbot’s send button, then the response is streamed back into the page you requested it from.
+
+Instead of definitions, as Rauno’s prototype depicted, ELIX responds with explanations. This is because it solves for circumstances seeking useful understanding, which may not always be technically correct. Revolving the experience around the youthful presets (”explain like I’m 5, 10, 15, 20”) & the freeform input’s playful placeholders (”explain like I’m a cat”) reinforce the notion that responses are heuristics, not expert-level definition. As Nassim Taleb explains in Antifragile:
+
+> “Heuristics are simplified rules of thumb that make things simple and easy to implement. But their main advantage is that the user knows that they are not perfect, just expedient, and is therefore less fooled by their powers. They become dangerous when we forget that.”
+> 
+
+Imagine an average person comes across a mention of cryogenic propellant transfer while reading an article about SpaceX. Quickly getting the gist of the concept will help them through the article, without any illusion that they’re not a rocket scientist (as in, without fully *grokking* it — sorry, had to).
+
+ELIX helps us act under uncertainty, without eliminating it entirely.
+
+## Chromium Alpha Testing
 
 1. Open `chrome://extensions`
 2. Enable **Developer mode**
@@ -17,13 +30,6 @@ Working Manifest V3 BYOK prototype.
 7. To explain a region of an image, video, or canvas, open **Settings** in the toolbar popup and turn on **Media input (alpha)**. Hover over the media, click **ELIX**, and drag a rectangle over the frozen screenshot. Press Escape to cancel; very small selections can be redrawn.
 
 After updating an existing installation, reload the extension and the webpage. This version requests `<all_urls>` host access so the in-page button can capture the visible tab. Only the selected crop is sent to OpenAI; the full screenshot stays local and is discarded after cropping. The model list is limited to recent models that accept text and images.
-
-## How it works
-
-1. Content script watches for text selection, shows an ELIX chip (placed to avoid other highlight menus), and opens a shadow-DOM overlay when you click it
-2. The overlay starts generating at the saved level (5 until you pick another); picking another level saves it and sends the selected text to the background service worker
-3. Service worker calls OpenAI Chat Completions with your stored key
-4. Explanation is returned into the overlay
 
 ## Known limitations
 
@@ -39,11 +45,3 @@ The chip only appears when the page exposes a normal HTML selection (`window.get
 
 - The API key is stored in `chrome.storage.sync`. Enter or edit it in Chrome’s native popup. The in-page settings display only a masked abbreviation, and the service worker sends API requests.
 - Explanations are sent to OpenAI Chat Completions
-
-## Development
-
-Run `npm ci` to install dependencies and `npm run build` after editing the MaxOS age selector, toolbar popup, or their dependencies. Include the regenerated bundles so the extension can still load directly from this folder.
-
-## Capture Checks
-
-After `npm ci` and `npx playwright install chromium`, run `npm test` for browser interaction and request checks. These use mocked Chrome APIs and never send an API request. Actual Chrome permission grants and protected video capture still need a manual extension smoke test.
