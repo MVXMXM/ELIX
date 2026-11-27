@@ -52,8 +52,13 @@ async function checkPopup(browser) {
       window.chrome = {
         runtime: {
           getManifest: () => ({ version }),
-          sendMessage: async message => message.type === "ELIX_API_KEY_STATUS" && savedSettings.apiKey
-            ? "sk-...TaoA" : null,
+          sendMessage: async message => {
+            if (message.type === "ELIX_OPEN_API_KEY") {
+              window.editorRequest = message;
+              return true;
+            }
+            return message.type === "ELIX_API_KEY_STATUS" && savedSettings.apiKey ? "sk-...TaoA" : null;
+          },
         },
         storage: {
           sync: {
@@ -67,7 +72,7 @@ async function checkPopup(browser) {
     }, manifest.version);
     await page.goto(pathToFileURL(path.join(root, "popup/popup.html")).href);
     const logo = page.getByRole("img", { name: "ELIX" });
-    const instructions = page.getByText("Please add an API key to start using ELIX.");
+    const instructions = page.getByText("Please add an API key to get started.");
     await logo.waitFor({ state: "visible" });
     await instructions.waitFor({ state: "visible" });
     const wordmarkStyle = await logo.evaluate(el => {
@@ -78,10 +83,10 @@ async function checkPopup(browser) {
     assert.match(wordmarkStyle.maskImage, /elix-wordmark\.svg/);
     const addApiKey = page.getByRole("button", { name: "Add an API key" });
     await addApiKey.waitFor({ state: "visible" });
-    const repo = page.getByRole("link", { name: "Source code", exact: true });
-    const settings = page.getByRole("button", { name: "Settings", exact: true });
+    const repo = page.getByRole("link", { name: "View source code", exact: true });
+    const settings = page.getByRole("group", { name: "Settings", exact: true });
     const editApiKey = page.getByRole("button", { name: "Edit API Key" });
-    const model = page.getByLabel("Model");
+    const model = page.getByRole("button", { name: "Model", exact: true });
     assert.equal(await repo.getAttribute("href"), "https://github.com/MVXMXM/ELIX");
     assert.equal(await repo.getAttribute("target"), "_blank");
     await editApiKey.waitFor({ state: "hidden" });
@@ -92,48 +97,43 @@ async function checkPopup(browser) {
       notifySettings({ apiKey: { newValue: "test" } }, "sync");
     });
     await addApiKey.waitFor({ state: "hidden" });
-    await page.getByText("Highlight text on the page, then click ELIX.").waitFor();
-    await settings.click();
-    await repo.waitFor({ state: "hidden" });
+    await page.getByText("Highlight any text on your screen for an in-situ explanation.").waitFor();
+    await settings.waitFor({ state: "visible" });
+    await repo.waitFor({ state: "visible" });
     await editApiKey.waitFor({ state: "visible" });
     await page.getByRole("button", { name: "Delete API Key" }).waitFor();
     assert.equal(await page.locator("#masked-api-key").textContent(), "sk-...TaoA");
     assert.equal(await page.locator("input[type=password]").count(), 0);
-    assert.equal(await model.inputValue(), "gpt-6-luna");
-    await model.selectOption("gpt-6.1-sol");
+    const modelValue = settings.locator(".maxos-settings-panel-value");
+    assert.equal(await modelValue.textContent(), "GPT-6 Luna");
+    await model.press("Enter");
+    await page.getByRole("button", { name: "GPT-6.1 Sol", exact: true }).click();
     await page.waitForFunction(() => savedSettings.model === "gpt-6.1-sol");
     const images = page.getByRole("switch", { name: "Media input (alpha)" });
     await images.waitFor({ state: "visible" });
-    const dividerGaps = await page.locator("#settings hr").evaluateAll(dividers => dividers.map(divider => {
-      const above = divider.previousElementSibling || divider.parentElement.previousElementSibling;
-      const below = divider.nextElementSibling;
-      const bounds = divider.getBoundingClientRect();
-      return [
-        bounds.top - above.getBoundingClientRect().bottom,
-        below.getBoundingClientRect().top - bounds.bottom,
-      ];
-    }));
-    assert.deepEqual(dividerGaps, [[24, 24], [24, 24], [24, 24]]);
     assert.equal(await images.getAttribute("aria-checked"), "false");
+    await page.getByText("Media input (alpha)", { exact: true }).click();
+    await page.waitForFunction(() => savedSettings.mediaEnabled === true);
+    await images.and(page.getByRole("switch", { checked: true })).waitFor();
+    await images.press("Space");
+    await page.waitForFunction(() => savedSettings.mediaEnabled === false);
+    await images.and(page.getByRole("switch", { checked: false })).waitFor();
     await images.press("Space");
     await images.and(page.getByRole("switch", { checked: true })).waitFor();
     await page.waitForFunction(() => savedSettings.mediaEnabled === true);
     assert.equal(await page.getByRole("button", { name: /^(Save|Cancel)$/ }).count(), 0);
-    await page.getByRole("button", { name: "Back" }).click();
-    await editApiKey.waitFor({ state: "hidden" });
-    await repo.waitFor({ state: "visible" });
     assert.deepEqual(await page.evaluate(() => savedSettings), {
       apiKey: "test", model: "gpt-6.1-sol", mediaEnabled: true,
     });
-    await settings.click();
-    assert.equal(await model.inputValue(), "gpt-6.1-sol");
+    assert.equal(await modelValue.textContent(), "GPT-6.1 Sol");
     assert.equal(await images.getAttribute("aria-checked"), "true");
     await page.evaluate(() => {
       delete savedSettings.apiKey;
       notifySettings({ apiKey: { oldValue: "test" } }, "sync");
     });
     await addApiKey.click();
-    await page.waitForURL("**/api-key.html");
+    assert.deepEqual(await page.evaluate(() => window.editorRequest), { type: "ELIX_OPEN_API_KEY", remove: false });
+    await page.goto(pathToFileURL(path.join(root, "popup/api-key.html")).href);
     const apiKey = page.getByLabel("API key", { exact: true });
     const addMyKey = page.getByRole("button", { name: "Add my key" });
     assert.equal(await apiKey.getAttribute("type"), "password");

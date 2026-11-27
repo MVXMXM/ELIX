@@ -264,6 +264,19 @@ async function openNativePopup(tab, popup) {
     await chrome.action.setPopup({ tabId: tab.id, popup: "" }).catch(() => {});
   }
 }
+
+async function openApiKeyEditor(tab, path) {
+  try {
+    await chrome.tabs.create({
+      windowId: tab?.windowId,
+      url: chrome.runtime.getURL(path),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "ELIX_AUTHORIZE_PANEL") {
     const tabId = sender.tab?.id;
@@ -291,9 +304,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         })
         .catch(() => sendResponse(null));
     } else {
-      if (!sender.tab?.active) return;
+      if (sender.tab && !sender.tab.active) return;
       const path = message.remove === true ? `${API_KEY_PATH}?remove=1` : API_KEY_PATH;
-      openNativePopup(sender.tab, path).then(sendResponse);
+      openApiKeyEditor(sender.tab, path).then(sendResponse);
     }
     return true;
   }

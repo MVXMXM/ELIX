@@ -1,81 +1,111 @@
-import { Switch } from "@mvxmxm/maxos";
+import { SettingsPanel, SettingsPanelControlRow, SettingsPanelDropdownRow, Switch } from "@mvxmxm/maxos";
 import "@mvxmxm/maxos/switch.css";
 import "@mvxmxm/maxos/menu.css";
+import "@mvxmxm/maxos/settings-panel.css";
+import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 const home = document.querySelector("#home");
 const settings = document.querySelector("#settings");
 const addApiKey = document.querySelector("#add-api-key");
-const openSettings = document.querySelector("#open-settings");
-const backSettings = document.querySelector("#back-settings");
-const fields = settings.querySelector("fieldset");
-const model = fields.querySelector('[name="model"]');
-const editApiKey = document.querySelector("#edit-api-key");
-const deleteApiKey = document.querySelector("#delete-api-key");
-const maskedApiKey = document.querySelector("#masked-api-key");
 const embedded = window.parent !== window;
-const images = createRoot(document.querySelector("#images-control"));
+const settingsRoot = createRoot(settings);
 const status = document.querySelector("#status");
-const defaults = { model: "gpt-6-luna", mediaEnabled: false };
+const models = [
+  { id: "gpt-6-luna", label: "GPT-6 Luna" },
+  { id: "gpt-6.1-terra", label: "GPT-6.1 Terra" },
+  { id: "gpt-6.1-sol", label: "GPT-6.1 Sol" },
+];
+const defaults = { model: models[0].id, mediaEnabled: false };
 
 let savedSettings;
-function renderImagesSwitch(checked = savedSettings.mediaEnabled === true, disabled = false) {
-  images.render(
-    <Switch id="images-switch" checked={checked} disabled={disabled} onCheckedChange={async next => {
-      renderImagesSwitch(next, true);
-      await savePreference("mediaEnabled", next);
-      renderImagesSwitch();
-    }} />
+
+function Settings({ abbreviation }) {
+  const [modelOpen, setModelOpen] = useState(false);
+  const [model, setModel] = useState(savedSettings.model);
+  const savingModel = useRef(false);
+  const [mediaEnabled, setMediaEnabled] = useState(savedSettings.mediaEnabled === true);
+  const [savingMedia, setSavingMedia] = useState(false);
+
+  async function changeMediaEnabled(next) {
+    if (savingMedia) return;
+    setMediaEnabled(next);
+    setSavingMedia(true);
+    await savePreference("mediaEnabled", next);
+    setMediaEnabled(savedSettings.mediaEnabled === true);
+    setSavingMedia(false);
+  }
+
+  return (
+    <SettingsPanel aria-label="Settings">
+      <SettingsPanelControlRow
+        label="API key"
+        icon={
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/>
+            <circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/>
+          </svg>
+        }
+      >
+        <span className="api-key-row">
+          <code id="masked-api-key" aria-label="Masked API key">{abbreviation}</code>
+          <button className="key-action" type="button" aria-label="Edit API Key" title="Edit API Key" onClick={openKeyEditor}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3a2.8 2.8 0 0 1 4 4L8 19l-5 2 2-5Z" /><path d="m14.5 4.5 4 4" /></svg>
+          </button>
+          <button className="key-action" type="button" aria-label="Delete API Key" title="Delete API Key" onClick={event => openKeyEditor(event, true)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M5 6l1 14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1l1-14M10 10v7m4-7v7" /></svg>
+          </button>
+        </span>
+      </SettingsPanelControlRow>
+      <SettingsPanelDropdownRow
+        label="Model"
+        labelId="model-label"
+        icon={<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /><path d="M9 3v3m6-3v3m-6 12v3m6-3v3M3 9h3m-3 6h3m12-6h3m-3 6h3" /></svg>}
+        items={models}
+        value={model}
+        open={modelOpen}
+        onOpenChange={open => {
+          if (!open || !savingModel.current) setModelOpen(open);
+        }}
+        onChange={async next => {
+          if (savingModel.current) return;
+          savingModel.current = true;
+          settings.querySelector(".maxos-settings-panel-dropdown")?.focus();
+          await savePreference("model", next);
+          setModel(savedSettings.model);
+          savingModel.current = false;
+        }}
+      />
+      <SettingsPanelControlRow label="Media input (alpha)" labelId="media-label" onClick={() => changeMediaEnabled(!mediaEnabled)} icon={<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="9" r="1" /><path d="m4 17 5-4 4 3 4-5 4 5" /></svg>}>
+        <Switch aria-labelledby="media-label" checked={mediaEnabled} disabled={savingMedia} onCheckedChange={changeMediaEnabled} />
+      </SettingsPanelControlRow>
+    </SettingsPanel>
   );
 }
 
 document.querySelector("#version").textContent = `v${chrome.runtime.getManifest().version}`;
 
-function showHome() {
-  settings.hidden = true;
-  home.hidden = false;
-  status.textContent = "";
-  (openSettings.hidden ? addApiKey : openSettings).focus();
-}
-
 async function refreshKeyActions() {
   const abbreviation = await chrome.runtime.sendMessage({ type: "ELIX_API_KEY_STATUS" });
   const hasApiKey = typeof abbreviation === "string" && abbreviation.length > 0;
-  maskedApiKey.textContent = hasApiKey ? abbreviation : "";
   const focused = document.activeElement;
   home.querySelector(".instructions").textContent = hasApiKey
-    ? "Highlight text on the page, then click ELIX."
-    : "Please add an API key to start using ELIX.";
-  openSettings.hidden = !hasApiKey;
+    ? "Highlight any text on your screen for an in-situ explanation."
+    : "Please add an API key to get started.";
   addApiKey.hidden = hasApiKey;
-  if (!hasApiKey && !settings.hidden) {
-    showHome();
-  } else if (focused === addApiKey && hasApiKey) {
-    openSettings.focus();
-  } else if (focused === openSettings && !hasApiKey) {
-    addApiKey.focus();
-  }
+  settings.hidden = !hasApiKey;
+  settingsRoot.render(hasApiKey ? <Settings abbreviation={abbreviation} /> : null);
+  if (!hasApiKey && settings.contains(focused)) addApiKey.focus();
+  if (hasApiKey && focused === addApiKey) home.querySelector("a").focus();
 }
 
-openSettings.addEventListener("click", () => {
-  home.hidden = true;
-  settings.hidden = false;
-  status.textContent = "";
-  backSettings.focus();
-});
-
-async function openKeyEditor(event) {
+async function openKeyEditor(event, remove = false) {
   const button = event.currentTarget;
-  const remove = button === deleteApiKey;
-  if (!embedded) {
-    location.assign(remove ? "api-key.html?remove=1" : "api-key.html");
-    return;
-  }
-
+  status.textContent = "";
   button.disabled = true;
   try {
     const opened = await chrome.runtime.sendMessage({ type: "ELIX_OPEN_API_KEY", remove });
-    if (!opened) throw new Error("Native popup unavailable");
+    if (!opened) throw new Error("API key editor unavailable");
   } catch {
     status.textContent = "Could not open the API key editor. Try again.";
   } finally {
@@ -84,19 +114,11 @@ async function openKeyEditor(event) {
 }
 
 addApiKey.addEventListener("click", openKeyEditor);
-editApiKey.addEventListener("click", openKeyEditor);
-deleteApiKey.addEventListener("click", openKeyEditor);
-
-backSettings.addEventListener("click", showHome);
 
 async function loadSettings() {
   try {
     savedSettings = await chrome.storage.sync.get(defaults);
-    model.value = savedSettings.model;
-    if (!model.value) model.value = defaults.model;
-    savedSettings.model = model.value;
-    renderImagesSwitch();
-    fields.disabled = false;
+    if (!models.some(({ id }) => id === savedSettings.model)) savedSettings.model = defaults.model;
     await refreshKeyActions();
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === "sync" && changes.apiKey) {
@@ -120,13 +142,6 @@ async function savePreference(name, value) {
   }
 }
 
-model.addEventListener("change", async () => {
-  model.disabled = true;
-  await savePreference("model", model.value);
-  model.value = savedSettings.model;
-  model.disabled = false;
-});
-
 async function initialize() {
   if (embedded) {
     const allowed = await chrome.runtime.sendMessage({
@@ -136,16 +151,14 @@ async function initialize() {
     if (!allowed) return;
 
     document.documentElement.classList.add("embedded");
-    const panel = document.querySelector(".maxos-menu");
+    const content = document.body;
     const observer = new ResizeObserver(() => {
-      const { marginTop, marginBottom } = getComputedStyle(panel);
-      const height = Math.ceil(panel.getBoundingClientRect().height +
-        parseFloat(marginTop) + parseFloat(marginBottom));
+      const height = Math.ceil(content.getBoundingClientRect().height);
       window.parent.postMessage({ type: "ELIX_PANEL_HEIGHT", height }, "*");
     });
-    observer.observe(panel);
+    observer.observe(content);
     document.addEventListener("keydown", event => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !settings.querySelector('[aria-expanded="true"]')) {
         event.preventDefault();
         window.parent.postMessage({ type: "ELIX_CLOSE_PANEL" }, "*");
       }
