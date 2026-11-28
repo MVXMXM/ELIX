@@ -4,6 +4,7 @@ const MODELS = ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"];
 
 const DEFAULTS = {
   apiKey: "",
+  dataConsent: false,
   mediaEnabled: false,
   model: "gpt-6-luna",
 };
@@ -147,7 +148,7 @@ async function explainTextStream({ text, imageDataUrl, level, freeform, context 
     throw new Error("Enable image and video capture in ELIX settings first.");
   }
 
-  if (!settings.apiKey) {
+  if (!settings.apiKey || settings.dataConsent !== true) {
     throw new Error("Add your OpenAI API key in ELIX settings first.");
   }
 
@@ -291,10 +292,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "ELIX_API_KEY_STATUS" || message?.type === "ELIX_OPEN_API_KEY") {
     if (sender.url?.split("#", 1)[0] !== chrome.runtime.getURL(PANEL_PATH)) return;
     if (message.type === "ELIX_API_KEY_STATUS") {
-      chrome.storage.sync.get({ apiKey: "" })
-        .then(({ apiKey }) => {
+      chrome.storage.sync.get({ apiKey: "", dataConsent: false })
+        .then(({ apiKey, dataConsent }) => {
           const key = String(apiKey || "").trim();
-          if (!key) {
+          if (!key || dataConsent !== true) {
             sendResponse(null);
             return;
           }
@@ -315,6 +316,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       const settings = await getSettings();
       if (settings.mediaEnabled !== true) throw new Error("Enable image and video capture in ELIX settings first.");
+      if (!settings.apiKey || settings.dataConsent !== true) throw new Error("Finish API key setup in ELIX before capturing media.");
       if (!sender.tab?.id) throw new Error("Capture must be requested from a page.");
       const [active] = await chrome.tabs.query({ active: true, windowId: sender.tab.windowId });
       if (active?.id !== sender.tab.id) throw new Error("Keep this tab active while capturing.");

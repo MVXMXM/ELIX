@@ -6,6 +6,7 @@
   <meta name="description" content="ELIX is a browser extension that explains highlighted text at the level you choose, right on the page.">
   <meta name="theme-color" content="#f8fafc">
   <link rel="icon" href="icons/elix.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/llm-loader.css">
   <title>ELIX — Explain what you highlight</title>
   <style>
     @font-face {
@@ -39,32 +40,61 @@
       margin: 0;
       display: grid;
       place-items: center;
-      padding: 2rem 1.5rem;
+      padding: 2rem 1.5rem 8rem;
     }
 
     main {
       width: min(100%, 32rem);
-      margin-bottom: 80px;
-      text-align: center;
+      text-align: left;
     }
 
     h1 { margin: 0; }
 
     .wordmark {
       display: block;
-      margin-inline: auto;
-      max-width: 100%;
       height: auto;
+      box-sizing: content-box;
+      max-width: calc(100% - 16px);
+      margin-inline-start: -8px;
+      padding: 8px;
+      background: color-mix(in srgb, var(--accent) 28%, transparent);
+    }
+
+    .explain-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 6px;
+      margin-top: 16px;
+      color: #45556c;
+      font: 400 14px/1 Inter, system-ui, sans-serif;
     }
 
     .description {
+      display: grid;
+      align-items: start;
       max-width: 500px;
-      margin: 32px auto;
+      margin: 16px 0 32px;
       font-family: "Inter:Medium", Inter, system-ui, sans-serif;
       font-size: 1.125rem;
       font-weight: 500;
       line-height: 1.5;
-      text-wrap: balance;
+      text-wrap: pretty;
+    }
+
+    .description > * {
+      grid-area: 1 / 1;
+      margin: 0;
+    }
+
+    .explanation-sizing {
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .description .maxos-llm-loader {
+      justify-self: start;
+      --font-inter: "Inter:Medium", Inter, system-ui;
     }
 
     .button {
@@ -74,7 +104,7 @@
       padding: .8125rem .75rem;
       border: 1px solid transparent;
       border-radius: 2.5rem;
-      background: var(--accent);
+      background: #1a1a1a;
       color: #fff;
       font-family: "Archivo:SemiBold", Archivo, system-ui, sans-serif;
       font-size: .875rem;
@@ -89,7 +119,7 @@
       flex: none;
     }
 
-    .button:hover { background: #00a8e6; }
+    .button:hover { background: #333; }
 
     .button:focus-visible {
       outline: 2px solid var(--ink);
@@ -97,20 +127,170 @@
       box-shadow: 0 0 0 6px var(--accent);
     }
 
+    .landing-dock {
+      position: fixed;
+      inset: auto 1.5rem 16px;
+      display: grid;
+      justify-items: center;
+      gap: 16px;
+      background: var(--canvas);
+    }
+
+    .landing-footer {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: baseline;
+      gap: 4px 8px;
+      color: #62748e;
+      font-size: .6875rem;
+      text-align: center;
+    }
+
+    .landing-footer a {
+      color: inherit;
+      text-underline-offset: 2px;
+    }
+
+    .landing-version {
+      font-family: ui-monospace, monospace;
+      font-variant-numeric: slashed-zero;
+    }
   </style>
 </head>
 <body>
   <main>
     <h1><img class="wordmark" src="icons/elix-wordmark.svg" width="180" height="60" alt="ELIX"></h1>
-    <p class="description">
-      Highlight text on a webpage and get an explanation right there,
-      at the level you choose.
-    </p>
-    <a class="button" href="https://github.com/MVXMXM/ELIX#chromium-alpha-test">
+    <div class="explain-bar">
+      <span>Explain like I'm</span>
+      <span id="explain-options"></span>
+      <template id="explain-controls">
+        <style>
+          .age-selector {
+            --font-inter: "ELIX Inter";
+            --surface: #fcfcfc;
+            display: flex;
+            align-items: center;
+            height: 30px;
+          }
+
+          .age-selector .segmented-controller {
+            --background-alt: #e2e8f0;
+            gap: 2px;
+            padding: 2px;
+          }
+
+          .age-selector .segmented-controller :is(.segmented-controller-button, .segmented-controller-label) {
+            padding: 5px 8px;
+          }
+
+          .age-selector .segmented-controller-button[aria-pressed="false"] {
+            color: #62748e;
+          }
+
+          .age-selector .segmented-controller-indicator {
+            background: #45556c;
+          }
+
+          .age-selector .segmented-controller-button:disabled {
+            cursor: default;
+          }
+
+          .age-selector .segmented-controller-button:disabled::before {
+            display: none;
+          }
+        </style>
+        <div class="age-selector"></div>
+      </template>
+    </div>
+    <div class="description">
+      <p id="explanation" aria-live="polite" aria-atomic="true">ELIX is a little helper in Chrome. If you see a word or picture you don’t understand, pick it and ELIX will tell you what it means right there.</p>
+      <span class="maxos-llm-loader" role="status" hidden>Thinking…</span>
+    </div>
+  </main>
+  <div class="landing-dock">
+    <a class="button" href="https://github.com/MVXMXM/ELIX">
       <img src="/assets/github.svg" alt="">
-      <span>Try the alpha</span>
+      <span>View source code</span>
       <img src="/assets/external-link.svg" alt="">
     </a>
-  </main>
+    <footer class="landing-footer">
+      <span class="landing-version">v<!-- extension-version -->0.0.10</span>
+      <span aria-hidden="true">•</span>
+      <span>Built by <a href="https://www.mvxmxm.com">Maximillian Piras</a></span>
+      <span aria-hidden="true">•</span>
+      <a href="privacy.html">Privacy Policy</a>
+    </footer>
+  </div>
+  <script src="assets/age-selector.bundle.js"></script>
+  <script>
+    const explanation = document.querySelector("#explanation");
+    const explanations = {
+      5: explanation.textContent,
+      10: "ELIX is a Chrome extension that helps when you get stuck reading or looking at something online. Highlight a confusing bit of text or select part of a picture, and ELIX explains it on the same page.",
+      15: "ELIX explains unfamiliar ideas while you browse. Select text or part of an image to get an explanation on the page you’re already reading.",
+      20: "A Chrome extension to explain things without interrupting your flow. Highlight text or select an image crop for an in-situ explanation tailored to you.",
+    };
+    const loader = document.querySelector(".maxos-llm-loader");
+    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+    let pendingUpdate;
+
+    // Reserve enough room for every explanation at the current viewport width.
+    for (const copy of Object.values(explanations)) {
+      const sizingCopy = document.createElement("span");
+      sizingCopy.className = "explanation-sizing";
+      sizingCopy.setAttribute("aria-hidden", "true");
+      sizingCopy.textContent = copy;
+      explanation.parentElement.append(sizingCopy);
+    }
+
+    function showExplanation(copy) {
+      clearTimeout(pendingUpdate);
+      explanation.setAttribute("aria-busy", "true");
+      explanation.textContent = "";
+      loader.hidden = false;
+
+      pendingUpdate = setTimeout(() => {
+        loader.hidden = true;
+        const chunks = copy.match(/\S+\s*/g);
+        let visibleWords = 0;
+
+        function stream() {
+          visibleWords = reducedMotion.matches ? chunks.length : visibleWords + 2;
+          explanation.textContent = chunks.slice(0, visibleWords).join("");
+          if (visibleWords < chunks.length) {
+            pendingUpdate = setTimeout(stream, 32);
+          } else {
+            explanation.setAttribute("aria-busy", "false");
+          }
+        }
+
+        stream();
+      }, 450);
+    }
+
+    const controls = document.querySelector("#explain-options").attachShadow({ mode: "open" });
+    controls.append(document.querySelector("#explain-controls").content.cloneNode(true));
+    let age = "5";
+    const renderSelector = ElixAgeSelector.mount(
+      controls.querySelector(".age-selector"),
+      Object.keys(explanations),
+      nextAge => {
+        if (nextAge === age || nextAge === "other") return;
+        age = nextAge;
+        updateSelector();
+        showExplanation(explanations[age]);
+      }
+    );
+
+    function updateSelector() {
+      renderSelector(age, "", false);
+      const other = controls.querySelector("button[aria-expanded]");
+      other.disabled = true;
+      other.title = "Custom personas are available in the extension";
+    }
+
+    updateSelector();
+  </script>
 </body>
 </html>

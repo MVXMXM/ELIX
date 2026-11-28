@@ -12,8 +12,9 @@ async function checkBackground() {
   let endpoint;
   let listener;
   let storedModel = "gpt-4o-mini";
+  let dataConsent = true;
   const chrome = {
-    storage: { sync: { get: async defaults => ({ ...defaults, apiKey: "test", mediaEnabled: true, model: storedModel }) } },
+    storage: { sync: { get: async defaults => ({ ...defaults, apiKey: "test", dataConsent, mediaEnabled: true, model: storedModel }) } },
     runtime: { onConnect: { addListener() {} }, onMessage: { addListener(fn) { listener = fn; } } },
     action: { onClicked: { addListener() {} } },
     tabs: { query: async () => [{ id: 7 }], captureVisibleTab: async () => "data:image/png;base64,test" },
@@ -42,6 +43,15 @@ async function checkBackground() {
   assert.ok(capture.dataUrl);
   const denied = await new Promise(resolve => listener({ type: "ELIX_CAPTURE" }, { tab: { id: 8, windowId: 1 } }, resolve));
   assert.match(denied.error, /active/);
+  dataConsent = false;
+  endpoint = undefined;
+  await assert.rejects(
+    vm.runInContext('explainTextStream({text:"gravity", level:"5"}, new AbortController().signal, () => {})', context),
+    /API key/,
+  );
+  assert.equal(endpoint, undefined);
+  const needsConsent = await new Promise(resolve => listener({ type: "ELIX_CAPTURE" }, { tab: { id: 7, windowId: 1 } }, resolve));
+  assert.match(needsConsent.error, /Finish API key setup/);
 }
 
 async function checkPopup(browser) {
@@ -57,7 +67,7 @@ async function checkPopup(browser) {
               window.editorRequest = message;
               return true;
             }
-            return message.type === "ELIX_API_KEY_STATUS" && savedSettings.apiKey ? "sk-...TaoA" : null;
+            return message.type === "ELIX_API_KEY_STATUS" && savedSettings.apiKey && savedSettings.dataConsent ? "sk-...TaoA" : null;
           },
         },
         storage: {
@@ -71,6 +81,14 @@ async function checkPopup(browser) {
       };
     }, manifest.version);
     await page.goto(pathToFileURL(path.join(root, "popup/popup.html")).href);
+    const viewport = page.viewportSize();
+    await page.setViewportSize({ width: 140, height: 600 });
+    const panel = page.locator(".elix-popper");
+    assert.equal((await panel.boundingBox()).width, 400);
+    await page.evaluate(() => document.documentElement.classList.add("embedded"));
+    assert.ok((await panel.boundingBox()).width <= 140);
+    await page.evaluate(() => document.documentElement.classList.remove("embedded"));
+    await page.setViewportSize(viewport);
     const logo = page.getByRole("img", { name: "ELIX" });
     const instructions = page.getByText("Please add an API key to get started.");
     await logo.waitFor({ state: "visible" });
@@ -94,7 +112,8 @@ async function checkPopup(browser) {
     assert.ok((await addApiKey.boundingBox()).y < (await repo.boundingBox()).y);
     await page.evaluate(() => {
       savedSettings.apiKey = "test";
-      notifySettings({ apiKey: { newValue: "test" } }, "sync");
+      savedSettings.dataConsent = true;
+      notifySettings({ apiKey: { newValue: "test" }, dataConsent: { newValue: true } }, "sync");
     });
     await addApiKey.waitFor({ state: "hidden" });
     await page.getByText("Highlight any text on your screen for an in-situ explanation.").waitFor();
@@ -123,7 +142,7 @@ async function checkPopup(browser) {
     await page.waitForFunction(() => savedSettings.mediaEnabled === true);
     assert.equal(await page.getByRole("button", { name: /^(Save|Cancel)$/ }).count(), 0);
     assert.deepEqual(await page.evaluate(() => savedSettings), {
-      apiKey: "test", model: "gpt-6.1-sol", mediaEnabled: true,
+      apiKey: "test", dataConsent: true, model: "gpt-6.1-sol", mediaEnabled: true,
     });
     assert.equal(await modelValue.textContent(), "GPT-6.1 Sol");
     assert.equal(await images.getAttribute("aria-checked"), "true");
@@ -142,13 +161,16 @@ async function checkPopup(browser) {
     assert.equal(await addMyKey.isDisabled(), true);
     await apiKey.fill(" test ");
     assert.equal(await addMyKey.isEnabled(), true);
-    await page.getByRole("heading", { name: "Add an API key to ELIX" }).waitFor();
+    await page.getByRole("heading", { name: "Add an API key", exact: true }).waitFor();
+    await logo.waitFor({ state: "visible" });
     const platform = page.getByRole("link", { name: "OpenAI API key", exact: true });
     assert.equal(await platform.getAttribute("href"), "https://platform.openai.com/api-keys");
     assert.equal(await platform.getAttribute("target"), "_blank");
+    assert.equal(await page.getByRole("checkbox").count(), 0);
+    assert.equal(await page.evaluate(() => savedSettings.dataConsent), undefined);
     await addMyKey.click();
     await page.getByRole("status").filter({ hasText: "API key saved." }).waitFor();
-    assert.deepEqual(await page.evaluate(() => savedSettings), { apiKey: "test", model: "retired-model" });
+    assert.deepEqual(await page.evaluate(() => savedSettings), { apiKey: "test", dataConsent: true, model: "retired-model" });
     await page.goto(pathToFileURL(path.join(root, "popup/api-key.html")).href + "?remove=1");
     await page.getByRole("heading", { name: "Delete API key?" }).waitFor();
     await page.getByRole("button", { name: "Cancel" }).waitFor();
@@ -187,7 +209,13 @@ async function checkPopup(browser) {
         window.payloads = [];
         window.savedDefaults = {};
         window.chrome = {
-          storage: { sync: { get: async defaults => ({ ...defaults, apiKey: "test", mediaEnabled: true, ...savedDefaults }), set: async patch => Object.assign(savedDefaults, patch) }, onChanged: { addListener(listener) { window.changeSettings = listener; } } },
+          storage: {
+            sync: {
+              get: async defaults => ({ ...defaults, apiKey: "test", dataConsent: true, mediaEnabled: true, ...savedDefaults }),
+              set: async patch => Object.assign(savedDefaults, patch),
+            },
+            onChanged: { addListener(listener) { window.changeSettings = listener; } },
+          },
           runtime: {
             getManifest: () => ({ version: "0.0.1" }),
             getURL: name => `chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/${name}`,

@@ -1,4 +1,11 @@
 @font-face {
+  font-family: "ELIX Archivo";
+  src: url("../content/fonts/archivo-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
   font-family: "ELIX Inter";
   src: url("../content/fonts/inter-latin.woff2") format("woff2");
   font-weight: 100 900;
@@ -34,7 +41,8 @@
 body { margin: 0; }
 
 .elix-popper {
-  width: min(400px, 100%);
+  /* Give Chrome's native popup a width before it sizes its viewport. */
+  width: 400px;
   padding-bottom: 24px;
 }
 
@@ -45,7 +53,7 @@ body { margin: 0; }
 }
 
 .api-key-editor {
-  width: min(304px, 100%);
+  width: min(520px, 100%);
   color: var(--foreground);
   line-height: 1.5;
 }
@@ -205,7 +213,7 @@ input, select, button {
   box-sizing: border-box;
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 40px;
   padding: 7px 9px;
   color: var(--foreground);
   background: var(--surface);
@@ -238,6 +246,13 @@ input, select, button {
 
 .system-button--primary:not(:disabled):hover { background: #333; }
 
+.system-button--destructive {
+  color: #fff;
+  background: #b91c1c;
+}
+
+.system-button--destructive:not(:disabled):hover { background: #991b1b; }
+
 .system-button--secondary {
   border-color: var(--hairline);
   color: var(--foreground);
@@ -268,35 +283,75 @@ input:focus-visible, select:focus-visible {
 #status:empty { display: none; }
 
 .maxos-menu.api-key-editor {
+  display: grid;
+  gap: 24px;
   padding: 16px;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
 }
 
-.api-key-icon {
+.api-key-editor .wordmark:not([hidden]) {
   display: block;
-  width: 40px;
-  height: 40px;
-  margin: 0 auto 12px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  margin: 0 auto;
 }
 
-.api-key-editor h1 { text-align: center; }
+.api-key-header {
+  display: grid;
+  gap: 8px;
+}
+
+.api-key-editor h1 {
+  margin: 0;
+  font: 800 44px/1.1 "ELIX Archivo", sans-serif;
+  letter-spacing: 0;
+  text-align: center;
+  text-wrap: balance;
+}
+
+@media (max-width: 600px) {
+  .api-key-editor h1 { font-size: 28px; }
+}
 
 .api-key-description {
-  margin: 0 0 16px;
-  color: var(--foreground);
-  font-size: 13px;
-  font-weight: 400;
+  margin: 0;
+  color: #314158;
+  font: 400 16px/1.75 var(--font-inter), sans-serif;
+  letter-spacing: 0;
   text-align: center;
+  text-wrap: pretty;
 }
 
-.api-key-description a {
+.api-key-editor form {
+  display: grid;
+  gap: 24px;
+  max-width: 360px;
+  margin-inline: auto;
+}
+
+.api-key-editor fieldset {
+  gap: 8px;
+}
+
+.api-key-editor .api-key-removal {
+  width: 100%;
+}
+
+.api-key-editor #status {
+  margin-block: 0;
+}
+
+.api-key-caption {
+  margin: 0;
+  color: var(--muted);
+  font: 400 13px/1.5 var(--font-inter), sans-serif;
+  letter-spacing: 0;
+  text-align: center;
+  text-wrap: pretty;
+}
+
+.api-key-description a,
+.api-key-caption a {
   color: inherit;
   text-underline-offset: 2px;
 }

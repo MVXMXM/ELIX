@@ -19,7 +19,7 @@ if (window.parent === window) {
     fields.disabled = true;
     try {
       if (remove) await chrome.storage.sync.remove("apiKey");
-      else await chrome.storage.sync.set({ apiKey: value });
+      else await chrome.storage.sync.set({ apiKey: value, dataConsent: true });
       status.textContent = remove ? "API key removed." : "API key saved.";
       window.close();
     } catch {
@@ -32,8 +32,11 @@ if (window.parent === window) {
     const cancel = document.querySelector("#cancel-key-removal");
     document.querySelector("h1").textContent = "Delete API key?";
     document.querySelector(".api-key-description").textContent = "This removes the key from ELIX. You can add it again later.";
-    document.querySelector(".api-key-icon").style.display = "none";
-    apiKey.style.display = "none";
+    form.classList.add("api-key-removal");
+    apiKey.hidden = true;
+    document.querySelector("#api-key-consent").hidden = true;
+    submit.removeAttribute("aria-describedby");
+    submit.classList.replace("system-button--primary", "system-button--destructive");
     submit.textContent = "Delete key";
     submit.disabled = false;
     fields.disabled = false;
