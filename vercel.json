@@ -1,5 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "mkdir -p dist/assets dist/icons && cp index.html privacy.html dist/ && cp icons/elix.svg icons/elix-wordmark.svg dist/icons/ && cp public/assets/github.svg public/assets/external-link.svg dist/assets/",
+  "buildCommand": "mkdir -p dist/assets dist/icons && node -e 'const fs = require(\"node:fs\"); const { version } = require(\"./manifest.json\"); fs.writeFileSync(\"dist/index.html\", fs.readFileSync(\"index.html\", \"utf8\").replace(/<!-- extension-version -->[\\d.]+/, version));' && cp privacy.html dist/ && cp icons/elix.svg icons/elix-wordmark.svg dist/icons/ && cp public/assets/github.svg public/assets/external-link.svg dist/assets/ && cp node_modules/@mvxmxm/maxos/src/llm-loader.css content/age-selector.bundle.js dist/assets/",
   "outputDirectory": "dist"
 }

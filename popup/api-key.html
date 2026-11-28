@@ -10,25 +10,20 @@
 </head>
 <body class="api-key-page">
   <main class="maxos-menu api-key-editor">
-    <svg class="api-key-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/>
-      <circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/>
-    </svg>
-    <h1>Add an API key to ELIX</h1>
-    <p class="api-key-description">
-      ELIX runs on your own <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">OpenAI API key</a>, so please consider the risks &amp; costs of using this extension. We hold no responsibility for charges or changes to your account, the choice is yours.
-    </p>
+    <span class="wordmark" role="img" aria-label="ELIX"></span>
+    <header class="api-key-header">
+      <h1>Add an API key</h1>
+      <p class="api-key-description">
+        ELIX runs on your own <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">OpenAI API key</a>, so please consider the risks &amp; costs of using this extension. We hold no responsibility for charges or changes to your account, the choice is yours.
+      </p>
+    </header>
     <form autocomplete="off">
       <fieldset disabled>
-        <p class="data-disclosure">When you request an explanation, ELIX sends the selected text and relevant nearby context to OpenAI. With Media input enabled, ELIX sends the crop you select. OpenAI receives this content using your API key. <a href="https://elix.fyi/privacy.html" target="_blank" rel="noopener noreferrer">Privacy policy</a></p>
         <input type="password" name="apiKey" aria-label="API key" placeholder="sk-..." spellcheck="false" autocomplete="off">
-        <label class="data-consent">
-          <input type="checkbox" name="dataConsent">
-          <span>I agree to send this content to OpenAI when I request an explanation.</span>
-        </label>
-        <button class="system-button system-button--primary" type="submit" disabled>Add my key</button>
+        <button class="system-button system-button--primary" type="submit" aria-describedby="api-key-consent" disabled>Add my key</button>
+        <button class="system-button system-button--secondary" type="button" id="cancel-key-removal" hidden>Cancel</button>
       </fieldset>
-      <button class="system-button system-button--secondary" type="button" id="cancel-key-removal" hidden>Cancel</button>
+      <p class="api-key-caption" id="api-key-consent">By adding your key, you consent to ELIX sending OpenAI any content from the website you requested an explanation on, as outlined in our <a href="https://elix.fyi/privacy.html" target="_blank" rel="noopener noreferrer">privacy policy</a>.</p>
       <p id="status" role="status"></p>
     </form>
   </main>

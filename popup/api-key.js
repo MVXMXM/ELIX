@@ -1,21 +1,20 @@
 if (window.parent === window) {
   const form = document.querySelector("form");
   const fields = form.querySelector("fieldset");
-  const { apiKey, dataConsent } = form.elements;
+  const { apiKey } = form.elements;
   const submit = form.querySelector('button[type="submit"]');
   const status = document.querySelector("#status");
   const remove = new URLSearchParams(location.search).get("remove") === "1";
 
   function syncSubmit() {
-    submit.disabled = !apiKey.value.trim() || !dataConsent.checked;
+    submit.disabled = !apiKey.value.trim();
   }
 
   apiKey.addEventListener("input", syncSubmit);
-  dataConsent.addEventListener("change", syncSubmit);
   form.addEventListener("submit", async event => {
     event.preventDefault();
     const value = apiKey.value.trim();
-    if (fields.disabled || (!remove && (!value || !dataConsent.checked))) return;
+    if (fields.disabled || (!remove && !value)) return;
 
     fields.disabled = true;
     try {
@@ -33,10 +32,11 @@ if (window.parent === window) {
     const cancel = document.querySelector("#cancel-key-removal");
     document.querySelector("h1").textContent = "Delete API key?";
     document.querySelector(".api-key-description").textContent = "This removes the key from ELIX. You can add it again later.";
-    document.querySelector(".api-key-icon").style.display = "none";
+    form.classList.add("api-key-removal");
     apiKey.hidden = true;
-    dataConsent.closest("label").hidden = true;
-    form.querySelector(".data-disclosure").hidden = true;
+    document.querySelector("#api-key-consent").hidden = true;
+    submit.removeAttribute("aria-describedby");
+    submit.classList.replace("system-button--primary", "system-button--destructive");
     submit.textContent = "Delete key";
     submit.disabled = false;
     fields.disabled = false;
@@ -44,9 +44,8 @@ if (window.parent === window) {
     cancel.addEventListener("click", () => window.close());
     cancel.focus();
   } else {
-    chrome.storage.sync.get({ apiKey: "", dataConsent: false }).then(saved => {
+    chrome.storage.sync.get({ apiKey: "" }).then(saved => {
       apiKey.value = saved.apiKey;
-      dataConsent.checked = saved.dataConsent === true;
       syncSubmit();
       fields.disabled = false;
       apiKey.focus();

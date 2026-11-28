@@ -25,7 +25,7 @@ ELIX helps us act under uncertainty, without eliminating it entirely.
 2. Enable **Developer mode**
 3. Click **Load unpacked**
 4. Select this folder (`ELIX`)
-5. Open **ELIX** in the Chrome toolbar and click **Add an API key**. In the ELIX tab, enter your key, confirm the data disclosure, then click **Add my key**. Highlight text on any normal webpage and click the in-page **ELIX** button.
+5. Open **ELIX** in the Chrome toolbar and click **Add an API key**. In the ELIX tab, enter your key, read the data disclosure, then click **Add my key**. Highlight text on any normal webpage and click the in-page **ELIX** button.
 6. It explains at the saved level (5 until you pick another age or persona). That choice is remembered.
 7. To explain a region of an image, video, or canvas, open **Settings** in the toolbar popup and turn on **Media input (alpha)**. Hover over the media, click **ELIX**, and drag a rectangle over the frozen screenshot. Press Escape to cancel; very small selections can be redrawn.
 

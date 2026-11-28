@@ -2,6 +2,7 @@
   "name": "elix",
   "private": true,
   "scripts": {
+    "dev": "node -e 'require(\"node:child_process\").execSync(require(\"./vercel.json\").buildCommand, { stdio: \"inherit\" })' && python3 -m http.server 3000 --bind 127.0.0.1 --directory dist",
     "build": "esbuild content/age-selector.jsx --bundle --minify --jsx=automatic --loader:.css=text --loader:.woff2=binary --global-name=ElixAgeSelector --outfile=content/age-selector.bundle.js && esbuild popup/popup.jsx --bundle --minify --jsx=automatic --outfile=popup/popup.bundle.js",
     "package:chrome": "npm run build && node scripts/package-extension.mjs",
     "test": "node tests/media-capture.cjs"
